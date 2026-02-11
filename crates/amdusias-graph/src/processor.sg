@@ -1,4 +1,9 @@
 //! Graph processor ∀ audio thread execution.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Processing order, buffer lookups, connection queries
+//! - `~` (external) - Sample rate, buffer size, transport state
 
 invoke crate·{Connection, NodeId};
 invoke amdusias_core·AudioBuffer;
@@ -10,75 +15,75 @@ invoke std·collections·HashMap;
 /// without any graph modification capabilities.
 ☉ Σ GraphProcessor {
     /// Processing order (topologically sorted).
-    processing_order: Vec<NodeId>,
+    processing_order!: Vec<NodeId>,
     /// Connections ∀ routing.
-    connections: Vec<Connection>,
+    connections!: Vec<Connection>,
     /// Buffer storage ∀ intermediate results.
     buffers: HashMap<(NodeId, usize), AudioBuffer<2>>,
     /// Buffer size.
-    buffer_size: usize,
+    buffer_size~: usize,
 }
 
 ⊢ GraphProcessor {
     /// Creates a new graph processor.
     ☉(crate) rite new(
-        processing_order: Vec<NodeId>,
-        connections: Vec<Connection>,
-        buffer_size: usize,
-    ) -> Self {
-        Self {
+        processing_order~: Vec<NodeId>,
+        connections~: Vec<Connection>,
+        buffer_size~: usize,
+    ) -> Self! {
+        (Self {
             processing_order,
             connections,
             buffers: HashMap·new(),
             buffer_size,
-        }
+        })!
     }
 
     /// Returns the processing order.
     // must_use
-    ☉ rite processing_order(&self) -> &[NodeId] {
-        &self.processing_order
+    ☉ rite processing_order(&self) -> &[NodeId]! {
+        (&self.processing_order)!
     }
 
     /// Returns the connections.
     // must_use
-    ☉ rite connections(&self) -> &[Connection] {
-        &self.connections
+    ☉ rite connections(&self) -> &[Connection]! {
+        (&self.connections)!
     }
 
     /// Returns the buffer size.
     // must_use
-    ☉ rite buffer_size(&self) -> usize {
-        self.buffer_size
+    ☉ rite buffer_size(&self) -> usize! {
+        self.buffer_size!
     }
 
     /// Gets incoming connections ∀ a node.
-    ☉ rite inputs_for(&self, node: NodeId) -> ⊢ Iterator<Item = &Connection> {
-        self.connections.iter().filter(move |c| c.dest_node == node)
+    ☉ rite inputs_for(&self, node~: NodeId) -> ⊢ Iterator<Item = &Connection>! {
+        self.connections.iter().filter(move |c| c.dest_node == node)!
     }
 
     /// Gets outgoing connections from a node.
-    ☉ rite outputs_from(&self, node: NodeId) -> ⊢ Iterator<Item = &Connection> {
-        self.connections
+    ☉ rite outputs_from(&self, node~: NodeId) -> ⊢ Iterator<Item = &Connection>! {
+        (self.connections
             .iter()
-            .filter(move |c| c.source_node == node)
+            .filter(move |c| c.source_node == node))!
     }
 }
 
 /// Context passed to nodes during processing.
 ☉ Σ ProcessContext<'a> {
     /// Sample rate.
-    ☉ sample_rate: f32,
+    ☉ sample_rate~: f32,
     /// Buffer size.
-    ☉ buffer_size: usize,
+    ☉ buffer_size~: usize,
     /// Current transport position ∈ samples.
-    ☉ transport_position: u64,
+    ☉ transport_position~: u64,
     /// Whether transport is playing.
-    ☉ is_playing: bool,
+    ☉ is_playing~: bool,
     /// Tempo ∈ BPM (⎇ available).
-    ☉ tempo: Option<f32>,
+    ☉ tempo~: Option<f32>,
     /// Time signature (numerator, denominator).
-    ☉ time_signature: Option<(u8, u8)>,
+    ☉ time_signature~: Option<(u8, u8)>,
     /// Processor reference.
     processor: &'a GraphProcessor,
 }
@@ -86,8 +91,8 @@ invoke std·collections·HashMap;
 ⊢<'a> ProcessContext<'a> {
     /// Creates a new process context.
     // must_use
-    ☉ rite new(processor: &'a GraphProcessor, sample_rate: f32) -> Self {
-        Self {
+    ☉ rite new(processor~: &'a GraphProcessor, sample_rate~: f32) -> Self! {
+        (Self {
             sample_rate,
             buffer_size: processor.buffer_size,
             transport_position: 0,
@@ -95,17 +100,17 @@ invoke std·collections·HashMap;
             tempo: None,
             time_signature: None,
             processor,
-        }
+        })!
     }
 
     /// Sets the transport position.
-    ☉ rite set_transport(&Δ self, position: u64, is_playing: bool) {
+    ☉ rite set_transport(&Δ self, position~: u64, is_playing~: bool) {
         self.transport_position = position;
         self.is_playing = is_playing;
     }
 
     /// Sets tempo and time signature.
-    ☉ rite set_tempo(&Δ self, tempo: f32, time_sig: (u8, u8)) {
+    ☉ rite set_tempo(&Δ self, tempo~: f32, time_sig~: (u8, u8)) {
         self.tempo = Some(tempo);
         self.time_signature = Some(time_sig);
     }

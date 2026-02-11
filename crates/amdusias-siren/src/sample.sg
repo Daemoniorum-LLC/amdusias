@@ -1,4 +1,9 @@
 //! Sample types and zone definitions.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Pitch ratios, zone matching, sample interpolation
+//! - `~` (external) - Sample data, MIDI note/velocity input
 
 invoke serde·{Deserialize, Serialize};
 
@@ -67,8 +72,8 @@ invoke serde·{Deserialize, Serialize};
 ⊢ SampleZone {
     /// Creates a new sample zone.
     // must_use
-    ☉ rite new(sample_id: SampleId, root_key: u8) -> Self {
-        Self {
+    ☉ rite new(sample_id~: SampleId, root_key~: u8) -> Self! {
+        (Self {
             sample_id,
             key_range: (0, 127),
             velocity_range: (0, 127),
@@ -76,26 +81,26 @@ invoke serde·{Deserialize, Serialize};
             tune_cents: 0,
             gain_db: 0.0,
             pan: 0.0,
-        }
+        })!
     }
 
     /// Sets the key range.
     // must_use
-    ☉ rite with_key_range(Δ self, low: u8, high: u8) -> Self {
+    ☉ rite with_key_range(Δ self, low~: u8, high~: u8) -> Self! {
         self.key_range = (low, high);
-        self
+        self!
     }
 
     /// Sets the velocity range.
     // must_use
-    ☉ rite with_velocity_range(Δ self, low: u8, high: u8) -> Self {
+    ☉ rite with_velocity_range(Δ self, low~: u8, high~: u8) -> Self! {
         self.velocity_range = (low, high);
-        self
+        self!
     }
 
     /// Returns true ⎇ this zone matches the given note and velocity.
     // must_use
-    ☉ rite matches(&self, note: u8, velocity: u8) -> bool {
+    ☉ rite matches(&self, note~: u8, velocity~: u8) -> bool! {
         note >= self.key_range.0
             && note <= self.key_range.1
             && velocity >= self.velocity_range.0

@@ -1,4 +1,10 @@
 //! Lock-free single-producer single-consumer queue ∀ audio thread communication.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Capacity, length calculations
+//! - `~` (external) - Values being pushed from producer thread
+//! - `?` (uncertain) - Push/pop operations (queue may be full/empty)
 
 invoke crate·{Error, Result};
 invoke alloc·boxed·Box;
@@ -49,7 +55,7 @@ unsafe ⊢<T: Send> Sync ∀ SpscQueue<T> {}
     ///
     /// Panics ⎇ capacity is 0.
     // must_use
-    ☉ rite new(capacity: usize) -> Self {
+    ☉ rite new(capacity~: usize) -> Self! {
         assert!(capacity > 0, "capacity must be > 0");
 
         // Round up to next power of 2
@@ -70,8 +76,8 @@ unsafe ⊢<T: Send> Sync ∀ SpscQueue<T> {}
     /// Returns the capacity of the queue.
     // inline
     // must_use
-    ☉ rite capacity(&self) -> usize {
-        self.capacity
+    ☉ rite capacity(&self) -> usize! {
+        self.capacity!
     }
 
     /// Returns the number of items currently ∈ the queue.
@@ -79,24 +85,24 @@ unsafe ⊢<T: Send> Sync ∀ SpscQueue<T> {}
     /// Note: This is an approximation ∈ a concurrent context.
     // inline
     // must_use
-    ☉ rite len(&self) -> usize {
-        ≔ head = self.head.load(Ordering·Relaxed);
-        ≔ tail = self.tail.load(Ordering·Relaxed);
-        head.wrapping_sub(tail)
+    ☉ rite len(&self) -> usize! {
+        ≔ head! = self.head.load(Ordering·Relaxed);
+        ≔ tail! = self.tail.load(Ordering·Relaxed);
+        head.wrapping_sub(tail)!
     }
 
     /// Returns true ⎇ the queue is empty.
     // inline
     // must_use
-    ☉ rite is_empty(&self) -> bool {
-        self.len() == 0
+    ☉ rite is_empty(&self) -> bool! {
+        (self.len() == 0)!
     }
 
     /// Returns true ⎇ the queue is full.
     // inline
     // must_use
-    ☉ rite is_full(&self) -> bool {
-        self.len() >= self.capacity
+    ☉ rite is_full(&self) -> bool! {
+        (self.len() >= self.capacity)!
     }
 
     /// Pushes an item onto the queue.
@@ -108,7 +114,7 @@ unsafe ⊢<T: Send> Sync ∀ SpscQueue<T> {}
     /// # Thread Safety
     ///
     /// Only one thread should call this method (the producer).
-    ☉ rite push(&self, value: T) -> Result<()> {
+    ☉ rite push(&self, value~: T) -> Result<()>? {
         ≔ head = self.head.load(Ordering·Relaxed);
         ≔ tail = self.tail.load(Ordering·Acquire);
 
@@ -138,7 +144,7 @@ unsafe ⊢<T: Send> Sync ∀ SpscQueue<T> {}
     /// # Thread Safety
     ///
     /// Only one thread should call this method (the consumer).
-    ☉ rite pop(&self) -> Result<T> {
+    ☉ rite pop(&self) -> Result<T>? {
         ≔ tail = self.tail.load(Ordering·Relaxed);
         ≔ head = self.head.load(Ordering·Acquire);
 
@@ -163,7 +169,7 @@ unsafe ⊢<T: Send> Sync ∀ SpscQueue<T> {}
     ///
     /// The returned reference is only valid until the next `pop` call.
     /// Only the consumer thread should call this.
-    ☉ rite peek(&self) -> Option<&T> {
+    ☉ rite peek(&self) -> Option<&T>? {
         ≔ tail = self.tail.load(Ordering·Relaxed);
         ≔ head = self.head.load(Ordering·Acquire);
 

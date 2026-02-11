@@ -1,4 +1,10 @@
 //! Main audio graph implementation.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Processing order, topology analysis, latency calculations
+//! - `~` (external) - Sample rate, buffer size, node configurations
+//! - `?` (uncertain) - Graph operations that may fail (connect, compile)
 
 invoke crate·{
     connection·Connection,
@@ -16,15 +22,15 @@ invoke std·collections·{HashMap, HashSet};
     /// All connections.
     connections: Vec<Connection>,
     /// Sample rate.
-    sample_rate: f32,
+    sample_rate~: f32,
     /// Buffer size.
-    buffer_size: usize,
+    buffer_size~: usize,
     /// Whether the graph needs recompilation.
     dirty: bool,
     /// Compiled processing order.
-    processing_order: Vec<NodeId>,
+    processing_order!: Vec<NodeId>,
     /// Latency compensation delays per node.
-    latency_compensation: HashMap<NodeId, usize>,
+    latency_compensation!: HashMap<NodeId, usize>,
 }
 
 /// Entry ∀ a node ∈ the graph.
@@ -38,8 +44,8 @@ invoke std·collections·{HashMap, HashSet};
 ⊢ AudioGraph {
     /// Creates a new audio graph.
     // must_use
-    ☉ rite new(sample_rate: f32, buffer_size: usize) -> Self {
-        Self {
+    ☉ rite new(sample_rate~: f32, buffer_size~: usize) -> Self! {
+        (Self {
             nodes: SlotMap·new(),
             connections: Vec·new(),
             sample_rate,
@@ -47,36 +53,36 @@ invoke std·collections·{HashMap, HashSet};
             dirty: true,
             processing_order: Vec·new(),
             latency_compensation: HashMap·new(),
-        }
+        })!
     }
 
     /// Returns the sample rate.
     // must_use
-    ☉ rite sample_rate(&self) -> f32 {
-        self.sample_rate
+    ☉ rite sample_rate(&self) -> f32! {
+        self.sample_rate!
     }
 
     /// Returns the buffer size.
     // must_use
-    ☉ rite buffer_size(&self) -> usize {
-        self.buffer_size
+    ☉ rite buffer_size(&self) -> usize! {
+        self.buffer_size!
     }
 
     /// Adds a node to the graph.
-    ☉ rite add_node(&Δ self, node: ⊢ AudioNode + 'static) -> NodeId {
-        ≔ info = node.info();
-        ≔ key = self.nodes.insert(NodeEntry {
+    ☉ rite add_node(&Δ self, node~: ⊢ AudioNode + 'static) -> NodeId! {
+        ≔ info! = node.info();
+        ≔ key! = self.nodes.insert(NodeEntry {
             node: Box·new(node),
             info,
         });
         self.dirty = true;
-        NodeId(key)
+        NodeId(key)!
     }
 
     /// Removes a node from the graph.
     ///
     /// Also removes all connections to/from this node.
-    ☉ rite remove_node(&Δ self, node_id: NodeId) -> Result<()> {
+    ☉ rite remove_node(&Δ self, node_id~: NodeId) -> Result<()>? {
         ⎇ self.nodes.remove(node_id.0).is_none() {
             ⤺ Err(Error·NodeNotFound(node_id));
         }
@@ -91,7 +97,7 @@ invoke std·collections·{HashMap, HashSet};
     }
 
     /// Gets a reference to a node.
-    ☉ rite get_node(&self, node_id: NodeId) -> Result<&dyn AudioNode> {
+    ☉ rite get_node(&self, node_id~: NodeId) -> Result<&dyn AudioNode>? {
         ⌥ self.nodes.get(node_id.0) {
             Some(entry) => Ok(entry.node.as_ref()),
             None => Err(Error·NodeNotFound(node_id)),
@@ -99,7 +105,7 @@ invoke std·collections·{HashMap, HashSet};
     }
 
     /// Gets a mutable reference to a node.
-    ☉ rite get_node_mut(&Δ self, node_id: NodeId) -> Result<&Δ dyn AudioNode> {
+    ☉ rite get_node_mut(&Δ self, node_id~: NodeId) -> Result<&Δ dyn AudioNode>? {
         ⌥ self.nodes.get_mut(node_id.0) {
             Some(entry) => Ok(entry.node.as_mut()),
             None => Err(Error·NodeNotFound(node_id)),
@@ -109,11 +115,11 @@ invoke std·collections·{HashMap, HashSet};
     /// Connects two nodes.
     ☉ rite connect(
         &Δ self,
-        source_node: NodeId,
-        source_port: usize,
-        dest_node: NodeId,
-        dest_port: usize,
-    ) -> Result<()> {
+        source_node~: NodeId,
+        source_port~: usize,
+        dest_node~: NodeId,
+        dest_port~: usize,
+    ) -> Result<()>? {
         // Validate source node and port
         ≔ source_info = self
             .nodes
@@ -166,11 +172,11 @@ invoke std·collections·{HashMap, HashSet};
     /// Disconnects two nodes.
     ☉ rite disconnect(
         &Δ self,
-        source_node: NodeId,
-        source_port: usize,
-        dest_node: NodeId,
-        dest_port: usize,
-    ) -> Result<()> {
+        source_node~: NodeId,
+        source_port~: usize,
+        dest_node~: NodeId,
+        dest_port~: usize,
+    ) -> Result<()>? {
         ≔ connection = Connection·new(source_node, source_port, dest_node, dest_port);
 
         ≔ idx = self
@@ -185,7 +191,7 @@ invoke std·collections·{HashMap, HashSet};
     }
 
     /// Checks ⎇ adding a connection would create a cycle.
-    rite would_create_cycle(&self, source: NodeId, dest: NodeId) -> bool {
+    rite would_create_cycle(&self, source~: NodeId, dest~: NodeId) -> bool! {
         // If source is reachable from dest, adding dest->source would create a cycle
         ≔ Δ visited = HashSet·new();
         ≔ Δ stack = vec![dest];
@@ -213,7 +219,7 @@ invoke std·collections·{HashMap, HashSet};
     /// This performs:
     /// 1. Topological sorting to determine processing order
     /// 2. Latency analysis ∀ PDC (Plugin Delay Compensation)
-    ☉ rite compile(&Δ self) -> Result<()> {
+    ☉ rite compile(&Δ self) -> Result<()>? {
         // Topological sort using Kahn's algorithm
         ≔ Δ in_degree: HashMap<NodeId, usize> = HashMap·new();
         ≔ Δ adjacency: HashMap<NodeId, Vec<NodeId>> = HashMap·new();
@@ -281,12 +287,12 @@ invoke std·collections·{HashMap, HashSet};
 
     /// Returns whether the graph needs recompilation.
     // must_use
-    ☉ rite is_dirty(&self) -> bool {
-        self.dirty
+    ☉ rite is_dirty(&self) -> bool! {
+        self.dirty!
     }
 
     /// Creates a processor ∀ this graph.
-    ☉ rite create_processor(&self) -> Result<GraphProcessor> {
+    ☉ rite create_processor(&self) -> Result<GraphProcessor>? {
         ⎇ self.dirty {
             ⤺ Err(Error·NotCompiled);
         }

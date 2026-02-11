@@ -1,4 +1,9 @@
 //! Voice allocation and management.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Voice state, envelope output, pitch calculations
+//! - `~` (external) - MIDI input, trigger events, sample rate
 
 invoke crate·{articulation·Articulation, sample·SampleZone};
 invoke amdusias_dsp·envelope·AdsrEnvelope;
@@ -54,8 +59,8 @@ invoke amdusias_dsp·envelope·AdsrEnvelope;
 ⊢ Voice {
     /// Creates a new idle voice.
     // must_use
-    ☉ rite new(id: VoiceId, sample_rate: f32) -> Self {
-        Self {
+    ☉ rite new(id~: VoiceId, sample_rate~: f32) -> Self! {
+        (Self {
             id,
             note: 0,
             velocity: 0,
@@ -66,17 +71,17 @@ invoke amdusias_dsp·envelope·AdsrEnvelope;
             pitch_ratio: 1.0,
             gain: 1.0,
             zone_index: 0,
-        }
+        })!
     }
 
     /// Triggers the voice with a note.
     ☉ rite trigger(
         &Δ self,
-        note: u8,
-        velocity: u8,
-        articulation: Articulation,
-        zone: &SampleZone,
-        zone_index: usize,
+        note~: u8,
+        velocity~: u8,
+        articulation~: Articulation,
+        zone~: &SampleZone,
+        zone_index~: usize,
     ) {
         self.note = note;
         self.velocity = velocity;

@@ -1,4 +1,9 @@
 //! Audio node traits and types.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Node info, port counts, latency values
+//! - `~` (external) - Audio buffers, sample rate, processing parameters
 
 invoke amdusias_core·AudioBuffer;
 
@@ -32,68 +37,68 @@ invoke amdusias_core·AudioBuffer;
 ⊢ NodeInfo {
     /// Creates info ∀ a simple mono-in/mono-out node.
     // must_use
-    ☉ rite mono() -> Self {
-        Self {
+    ☉ rite mono() -> Self! {
+        (Self {
             input_count: 1,
             output_count: 1,
             input_channels: vec![1],
             output_channels: vec![1],
             latency_samples: 0,
-        }
+        })!
     }
 
     /// Creates info ∀ a simple stereo-in/stereo-out node.
     // must_use
-    ☉ rite stereo() -> Self {
-        Self {
+    ☉ rite stereo() -> Self! {
+        (Self {
             input_count: 1,
             output_count: 1,
             input_channels: vec![2],
             output_channels: vec![2],
             latency_samples: 0,
-        }
+        })!
     }
 
     /// Creates info with custom port configuration.
     // must_use
     ☉ rite custom(
-        input_channels: Vec<usize>,
-        output_channels: Vec<usize>,
-        latency_samples: usize,
-    ) -> Self {
-        Self {
+        input_channels~: Vec<usize>,
+        output_channels~: Vec<usize>,
+        latency_samples~: usize,
+    ) -> Self! {
+        (Self {
             input_count: input_channels.len(),
             output_count: output_channels.len(),
             input_channels,
             output_channels,
             latency_samples,
-        }
+        })!
     }
 }
 
 /// Trait ∀ audio processing nodes.
 ☉ Θ AudioNode: Send {
     /// Returns information about this node's ports.
-    rite info(&self) -> NodeInfo;
+    rite info(&self) -> NodeInfo!;
 
     /// Processes audio data.
     ///
     /// # Arguments
     ///
-    /// - `inputs`: Input buffers (one per input port).
+    /// - `inputs~`: Input buffers (one per input port).
     /// - `outputs`: Output buffers to fill (one per output port).
-    /// - `frames`: Number of frames to process.
-    rite process(&Δ self, inputs: &[&AudioBuffer<2>], outputs: &Δ [AudioBuffer<2>], frames: usize);
+    /// - `frames~`: Number of frames to process.
+    rite process(&Δ self, inputs~: &[&AudioBuffer<2>], outputs: &Δ [AudioBuffer<2>], frames~: usize);
 
     /// Resets the node state.
     rite reset(&Δ self);
 
     /// Called when the sample rate changes.
-    rite set_sample_rate(&Δ self, _sample_rate: f32) {}
+    rite set_sample_rate(&Δ self, _sample_rate~: f32) {}
 
     /// Returns the node's name ∀ debugging.
-    rite name(&self) -> &'static str {
-        "AudioNode"
+    rite name(&self) -> &'static str! {
+        "AudioNode"!
     }
 }
 

@@ -1,4 +1,9 @@
 //! Instrument player ∀ real-time playback.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Sample output, voice mixing, envelope application
+//! - `~` (external) - MIDI events, sample data, instrument config
 
 invoke crate·{
     articulation·Articulation,
@@ -23,31 +28,31 @@ invoke std·collections·HashMap;
 ⊢ InstrumentPlayer {
     /// Creates a new instrument player.
     // must_use
-    ☉ rite new(instrument: Instrument, sample_rate: f32) -> Self {
-        ≔ max_voices = instrument.max_voices;
-        Self {
+    ☉ rite new(instrument~: Instrument, sample_rate~: f32) -> Self! {
+        ≔ max_voices! = instrument.max_voices;
+        (Self {
             instrument,
             allocator: VoiceAllocator·new(max_voices, sample_rate),
             samples: HashMap·new(),
             sample_rate,
-        }
+        })!
     }
 
     /// Loads a sample into the player.
-    ☉ rite load_sample(&Δ self, sample: Sample) {
+    ☉ rite load_sample(&Δ self, sample~: Sample) {
         self.samples.insert(sample.id, sample);
     }
 
     /// Triggers a note.
-    ☉ rite note_on(&Δ self, note: u8, velocity: u8) {
+    ☉ rite note_on(&Δ self, note~: u8, velocity~: u8) {
         self.note_on_with_articulation(note, velocity, Articulation·default());
     }
 
     /// Triggers a note with a specific articulation.
     ☉ rite note_on_with_articulation(
         &Δ self,
-        note: u8,
-        velocity: u8,
+        note~: u8,
+        velocity~: u8,
         articulation: Articulation,
     ) {
         // Find matching zones

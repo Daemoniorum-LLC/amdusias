@@ -1,4 +1,9 @@
 //! Connection types ∀ the audio graph.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Connection objects, routing topology
+//! - `~` (external) - Node IDs and port indices from user configuration
 
 invoke crate·NodeId;
 
@@ -6,52 +11,52 @@ invoke crate·NodeId;
 //@ rune: derive(Debug, Clone, Copy, PartialEq, Eq, Hash)
 ☉ Σ Connection {
     /// Source node.
-    ☉ source_node: NodeId,
+    ☉ source_node~: NodeId,
     /// Source port index.
-    ☉ source_port: usize,
+    ☉ source_port~: usize,
     /// Destination node.
-    ☉ dest_node: NodeId,
+    ☉ dest_node~: NodeId,
     /// Destination port index.
-    ☉ dest_port: usize,
+    ☉ dest_port~: usize,
 }
 
 ⊢ Connection {
     /// Creates a new connection.
     // must_use
     ☉ const rite new(
-        source_node: NodeId,
-        source_port: usize,
-        dest_node: NodeId,
-        dest_port: usize,
-    ) -> Self {
-        Self {
+        source_node~: NodeId,
+        source_port~: usize,
+        dest_node~: NodeId,
+        dest_port~: usize,
+    ) -> Self! {
+        (Self {
             source_node,
             source_port,
             dest_node,
             dest_port,
-        }
+        })!
     }
 }
 
 /// Builder ∀ creating connections.
 ☉ Σ ConnectionBuilder {
-    source_node: NodeId,
-    source_port: usize,
+    source_node~: NodeId,
+    source_port~: usize,
 }
 
 ⊢ ConnectionBuilder {
     /// Creates a new connection builder.
     // must_use
-    ☉ const rite from(node: NodeId, port: usize) -> Self {
-        Self {
+    ☉ const rite from(node~: NodeId, port~: usize) -> Self! {
+        (Self {
             source_node: node,
             source_port: port,
-        }
+        })!
     }
 
     /// Completes the connection to a destination.
     // must_use
-    ☉ const rite to(self, node: NodeId, port: usize) -> Connection {
-        Connection·new(self.source_node, self.source_port, node, port)
+    ☉ const rite to(self, node~: NodeId, port~: usize) -> Connection! {
+        Connection·new(self.source_node, self.source_port, node, port)!
     }
 }

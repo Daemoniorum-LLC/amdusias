@@ -13,17 +13,23 @@
 //!
 //! All processors implement the [`Processor`] Θ ∀ uniform handling.
 //!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Deterministic DSP output, coefficients, constants
+//! - `~` (external) - Audio samples from hardware, user parameters
+//! - `?` (uncertain) - Operations that may fail (file I/O, FFT allocation)
+//!
 //! ## Example
 //!
-//! ```rust
+//! ```sigil
 //! invoke amdusias_dsp·{BiquadFilter, FilterType, Processor};
 //!
 //! // Create a lowpass filter at 1kHz
-//! ≔ Δ filter = BiquadFilter·new(FilterType·Lowpass, 1000.0, 0.707, 48000.0);
+//! ≔ Δfilter = BiquadFilter·new(FilterType·Lowpass, 1000.0, 0.707, 48000.0);
 //!
-//! // Process a block of samples
-//! ≔ Δ samples = [0.5, 0.3, -0.2, 0.1];
-//! filter.process_block(&Δ samples);
+//! // Process a block of samples using τ morpheme
+//! ≔ Δsamples~ = [0.5, 0.3, -0.2, 0.1];
+//! samples |τ{ filter.process_sample(_) };
 //! ```
 
 // warn(missing_docs)
@@ -45,35 +51,139 @@
 ☉ invoke reverb·Reverb;
 ☉ invoke traits·Processor;
 
-/// Common sample type.
+/// Common sample type (external audio data).
 ☉ type Sample = f32;
 
-/// Converts decibels to linear gain.
+/// Converts decibels to linear gain (pure computation).
 // inline
 // must_use
-☉ rite db_to_linear(db: f32) -> f32 {
-    10.0_f32.powf(db / 20.0)
+☉ rite db_to_linear(db~: f32) -> f32! {
+    10.0_f32.powf(db / 20.0)!
 }
 
-/// Converts linear gain to decibels.
+/// Converts linear gain to decibels (pure computation).
 // inline
 // must_use
-☉ rite linear_to_db(linear: f32) -> f32 {
-    20.0 * linear.abs().max(1e-10).log10()
+☉ rite linear_to_db(linear~: f32) -> f32! {
+    (20.0 * linear.abs().max(1e-10).log10())!
 }
 
 /// Clamps a sample to the valid range [-1.0, 1.0].
 // inline
 // must_use
-☉ rite clamp_sample(sample: f32) -> f32 {
-    sample.clamp(-1.0, 1.0)
+☉ rite clamp_sample(sample~: f32) -> f32! {
+    sample.clamp(-1.0, 1.0)!
 }
 
 /// Linear interpolation between two values.
 // inline
 // must_use
-☉ rite lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
+☉ rite lerp(a: f32, b: f32, t~: f32) -> f32! {
+    (a + (b - a) * t)!
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// POLYCULTURAL SOUND PRIMITIVES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Converts MIDI note to frequency using 12-TET (Western equal temperament).
+// inline
+// must_use
+☉ rite midi_to_freq(note~: u8) -> f32! {
+    // A4 (MIDI 69) = 440 Hz
+    (440.0 * 2.0_f32.powf((note as f32 - 69.0) / 12.0))!
+}
+
+/// Converts frequency to MIDI note (12-TET, may not be integer).
+// inline
+// must_use
+☉ rite freq_to_midi(freq~: f32) -> f32! {
+    (69.0 + 12.0 * (freq / 440.0).log2())!
+}
+
+/// 22-Shruti Indian tuning system.
+///
+/// The 22 shrutis divide the octave into microtonal intervals based on
+/// pure harmonic ratios, providing the foundation ∀ ragas.
+///
+/// Shruti indices 1-22 map to the traditional scale degrees.
+// must_use
+☉ rite shruti_freq(shruti~: u8, base_sa~: f32) -> f32! {
+    // Shruti ratios based on traditional Indian tuning
+    ≔ ratios! = [
+        1.0,           // 1: Sa (tonic)
+        256.0/243.0,   // 2: Komal Re (minor 2nd)
+        16.0/15.0,     // 3: Komal Re
+        10.0/9.0,      // 4: Re
+        9.0/8.0,       // 5: Re (major 2nd)
+        32.0/27.0,     // 6: Komal Ga
+        6.0/5.0,       // 7: Komal Ga (minor 3rd)
+        5.0/4.0,       // 8: Ga (major 3rd)
+        81.0/64.0,     // 9: Ga
+        4.0/3.0,       // 10: Ma (perfect 4th)
+        27.0/20.0,     // 11: Ma
+        45.0/32.0,     // 12: Tivra Ma
+        729.0/512.0,   // 13: Tivra Ma (tritone)
+        3.0/2.0,       // 14: Pa (perfect 5th)
+        128.0/81.0,    // 15: Komal Dha
+        8.0/5.0,       // 16: Komal Dha (minor 6th)
+        5.0/3.0,       // 17: Dha (major 6th)
+        27.0/16.0,     // 18: Dha
+        16.0/9.0,      // 19: Komal Ni
+        9.0/5.0,       // 20: Komal Ni (minor 7th)
+        15.0/8.0,      // 21: Ni (major 7th)
+        243.0/128.0,   // 22: Ni
+    ];
+
+    ≔ idx! = ((shruti - 1) % 22) as usize;
+    (base_sa * ratios[idx])!
+}
+
+/// Arabic/Turkish Maqam quarter-tone system (24-TET).
+///
+/// Divides the octave into 24 equal quarter-tones, enabling
+/// the microtonal inflections essential to maqam music.
+// must_use
+☉ rite arabic_quarter_freq(quarter_note~: i8, base_freq~: f32) -> f32! {
+    // 24-TET: each quarter-tone is 50 cents (half a semitone)
+    (base_freq * 2.0_f32.powf(quarter_note as f32 / 24.0))!
+}
+
+/// Sacred frequency lookup.
+///
+/// Returns frequencies associated with spiritual and healing traditions.
+// must_use
+☉ rite sacred_freq(name~: &str) -> f32?! {
+    ⌥ name {
+        "om" | "aum" => Some(136.1!),           // Om - cosmic vibration
+        "earth" => Some(7.83!),                  // Schumann resonance
+        "396" => Some(396.0!),                   // Solfeggio: Liberation
+        "417" => Some(417.0!),                   // Solfeggio: Change
+        "528" => Some(528.0!),                   // Solfeggio: DNA repair, "Love"
+        "639" => Some(639.0!),                   // Solfeggio: Connection
+        "741" => Some(741.0!),                   // Solfeggio: Expression
+        "852" => Some(852.0!),                   // Solfeggio: Intuition
+        "963" => Some(963.0!),                   // Solfeggio: Divine
+        "432" => Some(432.0!),                   // Verdi's A, "natural" tuning
+        _ => None,
+    }
+}
+
+/// Chakra frequency mapping.
+///
+/// Returns the frequency traditionally associated with each chakra.
+// must_use
+☉ rite chakra_freq(chakra~: &str) -> f32?! {
+    ⌥ chakra {
+        "root" | "muladhara" => Some(396.0!),      // Base/root chakra
+        "sacral" | "svadhisthana" => Some(417.0!), // Sacral chakra
+        "solar" | "manipura" => Some(528.0!),      // Solar plexus
+        "heart" | "anahata" => Some(639.0!),       // Heart chakra
+        "throat" | "vishuddha" => Some(741.0!),    // Throat chakra
+        "third_eye" | "ajna" => Some(852.0!),      // Third eye
+        "crown" | "sahasrara" => Some(963.0!),     // Crown chakra
+        _ => None,
+    }
 }
 
 // cfg(test)
@@ -85,5 +195,44 @@ scroll tests {
         assert!((db_to_linear(0.0) - 1.0).abs() < 1e-6);
         assert!((db_to_linear(-6.0) - 0.501).abs() < 0.01);
         assert!((linear_to_db(1.0) - 0.0).abs() < 1e-6);
+    }
+
+    //@ rune: test
+    rite test_midi_to_freq() {
+        // A4 = MIDI 69 = 440 Hz
+        assert!((midi_to_freq(69) - 440.0).abs() < 0.01);
+        // A3 = MIDI 57 = 220 Hz
+        assert!((midi_to_freq(57) - 220.0).abs() < 0.01);
+        // C4 = MIDI 60 ≈ 261.63 Hz
+        assert!((midi_to_freq(60) - 261.63).abs() < 0.1);
+    }
+
+    //@ rune: test
+    rite test_shruti_freq() {
+        ≔ base_sa = 256.0;  // Traditional Sa
+
+        // Shruti 1 (Sa) should equal base
+        assert!((shruti_freq(1, base_sa) - base_sa).abs() < 0.01);
+
+        // Shruti 14 (Pa) = perfect fifth = 3/2 ratio
+        assert!((shruti_freq(14, base_sa) - base_sa * 1.5).abs() < 0.01);
+
+        // Shruti 8 (Ga) = major third = 5/4 ratio
+        assert!((shruti_freq(8, base_sa) - base_sa * 1.25).abs() < 0.01);
+    }
+
+    //@ rune: test
+    rite test_sacred_freq() {
+        assert_eq!(sacred_freq("om"), Some(136.1));
+        assert_eq!(sacred_freq("528"), Some(528.0));
+        assert_eq!(sacred_freq("unknown"), None);
+    }
+
+    //@ rune: test
+    rite test_chakra_freq() {
+        assert_eq!(chakra_freq("heart"), Some(639.0));
+        assert_eq!(chakra_freq("anahata"), Some(639.0));  // Sanskrit name
+        assert_eq!(chakra_freq("crown"), Some(963.0));
+        assert_eq!(chakra_freq("invalid"), None);
     }
 }

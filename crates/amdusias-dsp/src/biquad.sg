@@ -2,6 +2,12 @@
 //!
 //! A biquad is a second-order IIR filter, the building block ∀ parametric EQ,
 //! crossovers, and many other filter types.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Coefficients, filter output, intermediate calculations
+//! - `~` (external) - Audio samples, user parameters (freq, Q, gain)
+//! - Internal state (z1, z2) is neither - it's internal mutable state
 
 invoke crate·{traits·Processor, Sample};
 
@@ -35,163 +41,174 @@ invoke crate·{traits·Processor, Sample};
     },
 }
 
-/// Biquad filter coefficients.
+/// Biquad filter coefficients (all computed from parameters).
 //@ rune: derive(Debug, Clone, Copy)
 ☉ Σ BiquadCoeffs {
-    /// Feedforward coefficient b0.
-    ☉ b0: f32,
-    /// Feedforward coefficient b1.
-    ☉ b1: f32,
-    /// Feedforward coefficient b2.
-    ☉ b2: f32,
-    /// Feedback coefficient a1 (normalized, a0 = 1).
-    ☉ a1: f32,
-    /// Feedback coefficient a2.
-    ☉ a2: f32,
+    /// Feedforward coefficient b0 (computed).
+    ☉ b0!: f32,
+    /// Feedforward coefficient b1 (computed).
+    ☉ b1!: f32,
+    /// Feedforward coefficient b2 (computed).
+    ☉ b2!: f32,
+    /// Feedback coefficient a1 (normalized, a0 = 1, computed).
+    ☉ a1!: f32,
+    /// Feedback coefficient a2 (computed).
+    ☉ a2!: f32,
 }
 
 ⊢ BiquadCoeffs {
     /// Calculates coefficients ∀ the given filter type.
+    ///
+    /// All parameters are external (from user/automation), output is computed.
     // must_use
-    ☉ rite calculate(filter_type: FilterType, freq: f32, q: f32, sample_rate: f32) -> Self {
-        ≔ omega = 2.0 * std·f32·consts·PI * freq / sample_rate;
-        ≔ sin_omega = omega.sin();
-        ≔ cos_omega = omega.cos();
-        ≔ alpha = sin_omega / (2.0 * q);
+    ☉ rite calculate(filter_type~: FilterType, freq~: f32, q~: f32, sample_rate~: f32) -> Self! {
+        // Precompute angular frequency and derived values
+        ≔ omega! = 2.0 * std·f32·consts·PI * freq / sample_rate;
+        ≔ sin_omega! = omega.sin();
+        ≔ cos_omega! = omega.cos();
+        ≔ alpha! = sin_omega / (2.0 * q);
 
-        ≔ (b0, b1, b2, a0, a1, a2) = ⌥ filter_type {
+        // Compute raw coefficients per filter type
+        ≔ (b0!, b1!, b2!, a0!, a1!, a2!) = ⌥ filter_type {
             FilterType·Lowpass => {
-                ≔ b1 = 1.0 - cos_omega;
-                ≔ b0 = b1 / 2.0;
-                ≔ b2 = b0;
-                ≔ a0 = 1.0 + alpha;
-                ≔ a1 = -2.0 * cos_omega;
-                ≔ a2 = 1.0 - alpha;
-                (b0, b1, b2, a0, a1, a2)
+                ≔ b1! = 1.0 - cos_omega;
+                ≔ b0! = b1 / 2.0;
+                ≔ b2! = b0;
+                ≔ a0! = 1.0 + alpha;
+                ≔ a1! = -2.0 * cos_omega;
+                ≔ a2! = 1.0 - alpha;
+                (b0, b1, b2, a0, a1, a2)!
             }
             FilterType·Highpass => {
-                ≔ b1 = -(1.0 + cos_omega);
-                ≔ b0 = (1.0 + cos_omega) / 2.0;
-                ≔ b2 = b0;
-                ≔ a0 = 1.0 + alpha;
-                ≔ a1 = -2.0 * cos_omega;
-                ≔ a2 = 1.0 - alpha;
-                (b0, b1, b2, a0, a1, a2)
+                ≔ b1! = -(1.0 + cos_omega);
+                ≔ b0! = (1.0 + cos_omega) / 2.0;
+                ≔ b2! = b0;
+                ≔ a0! = 1.0 + alpha;
+                ≔ a1! = -2.0 * cos_omega;
+                ≔ a2! = 1.0 - alpha;
+                (b0, b1, b2, a0, a1, a2)!
             }
             FilterType·Bandpass => {
-                ≔ b0 = alpha;
-                ≔ b1 = 0.0;
-                ≔ b2 = -alpha;
-                ≔ a0 = 1.0 + alpha;
-                ≔ a1 = -2.0 * cos_omega;
-                ≔ a2 = 1.0 - alpha;
-                (b0, b1, b2, a0, a1, a2)
+                ≔ b0! = alpha;
+                ≔ b1! = 0.0;
+                ≔ b2! = -alpha;
+                ≔ a0! = 1.0 + alpha;
+                ≔ a1! = -2.0 * cos_omega;
+                ≔ a2! = 1.0 - alpha;
+                (b0, b1, b2, a0, a1, a2)!
             }
             FilterType·Notch => {
-                ≔ b0 = 1.0;
-                ≔ b1 = -2.0 * cos_omega;
-                ≔ b2 = 1.0;
-                ≔ a0 = 1.0 + alpha;
-                ≔ a1 = -2.0 * cos_omega;
-                ≔ a2 = 1.0 - alpha;
-                (b0, b1, b2, a0, a1, a2)
+                ≔ b0! = 1.0;
+                ≔ b1! = -2.0 * cos_omega;
+                ≔ b2! = 1.0;
+                ≔ a0! = 1.0 + alpha;
+                ≔ a1! = -2.0 * cos_omega;
+                ≔ a2! = 1.0 - alpha;
+                (b0, b1, b2, a0, a1, a2)!
             }
             FilterType·Allpass => {
-                ≔ b0 = 1.0 - alpha;
-                ≔ b1 = -2.0 * cos_omega;
-                ≔ b2 = 1.0 + alpha;
-                ≔ a0 = 1.0 + alpha;
-                ≔ a1 = -2.0 * cos_omega;
-                ≔ a2 = 1.0 - alpha;
-                (b0, b1, b2, a0, a1, a2)
+                ≔ b0! = 1.0 - alpha;
+                ≔ b1! = -2.0 * cos_omega;
+                ≔ b2! = 1.0 + alpha;
+                ≔ a0! = 1.0 + alpha;
+                ≔ a1! = -2.0 * cos_omega;
+                ≔ a2! = 1.0 - alpha;
+                (b0, b1, b2, a0, a1, a2)!
             }
             FilterType·Peaking { gain_db } => {
-                ≔ a = 10.0_f32.powf(gain_db / 40.0);
-                ≔ b0 = 1.0 + alpha * a;
-                ≔ b1 = -2.0 * cos_omega;
-                ≔ b2 = 1.0 - alpha * a;
-                ≔ a0 = 1.0 + alpha / a;
-                ≔ a1 = -2.0 * cos_omega;
-                ≔ a2 = 1.0 - alpha / a;
-                (b0, b1, b2, a0, a1, a2)
+                ≔ a! = 10.0_f32.powf(gain_db / 40.0);
+                ≔ b0! = 1.0 + alpha * a;
+                ≔ b1! = -2.0 * cos_omega;
+                ≔ b2! = 1.0 - alpha * a;
+                ≔ a0! = 1.0 + alpha / a;
+                ≔ a1! = -2.0 * cos_omega;
+                ≔ a2! = 1.0 - alpha / a;
+                (b0, b1, b2, a0, a1, a2)!
             }
             FilterType·LowShelf { gain_db } => {
-                ≔ a = 10.0_f32.powf(gain_db / 40.0);
-                ≔ sqrt_a = a.sqrt();
-                ≔ b0 = a * ((a + 1.0) - (a - 1.0) * cos_omega + 2.0 * sqrt_a * alpha);
-                ≔ b1 = 2.0 * a * ((a - 1.0) - (a + 1.0) * cos_omega);
-                ≔ b2 = a * ((a + 1.0) - (a - 1.0) * cos_omega - 2.0 * sqrt_a * alpha);
-                ≔ a0 = (a + 1.0) + (a - 1.0) * cos_omega + 2.0 * sqrt_a * alpha;
-                ≔ a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cos_omega);
-                ≔ a2 = (a + 1.0) + (a - 1.0) * cos_omega - 2.0 * sqrt_a * alpha;
-                (b0, b1, b2, a0, a1, a2)
+                ≔ a! = 10.0_f32.powf(gain_db / 40.0);
+                ≔ sqrt_a! = a.sqrt();
+                ≔ b0! = a * ((a + 1.0) - (a - 1.0) * cos_omega + 2.0 * sqrt_a * alpha);
+                ≔ b1! = 2.0 * a * ((a - 1.0) - (a + 1.0) * cos_omega);
+                ≔ b2! = a * ((a + 1.0) - (a - 1.0) * cos_omega - 2.0 * sqrt_a * alpha);
+                ≔ a0! = (a + 1.0) + (a - 1.0) * cos_omega + 2.0 * sqrt_a * alpha;
+                ≔ a1! = -2.0 * ((a - 1.0) + (a + 1.0) * cos_omega);
+                ≔ a2! = (a + 1.0) + (a - 1.0) * cos_omega - 2.0 * sqrt_a * alpha;
+                (b0, b1, b2, a0, a1, a2)!
             }
             FilterType·HighShelf { gain_db } => {
-                ≔ a = 10.0_f32.powf(gain_db / 40.0);
-                ≔ sqrt_a = a.sqrt();
-                ≔ b0 = a * ((a + 1.0) + (a - 1.0) * cos_omega + 2.0 * sqrt_a * alpha);
-                ≔ b1 = -2.0 * a * ((a - 1.0) + (a + 1.0) * cos_omega);
-                ≔ b2 = a * ((a + 1.0) + (a - 1.0) * cos_omega - 2.0 * sqrt_a * alpha);
-                ≔ a0 = (a + 1.0) - (a - 1.0) * cos_omega + 2.0 * sqrt_a * alpha;
-                ≔ a1 = 2.0 * ((a - 1.0) - (a + 1.0) * cos_omega);
-                ≔ a2 = (a + 1.0) - (a - 1.0) * cos_omega - 2.0 * sqrt_a * alpha;
-                (b0, b1, b2, a0, a1, a2)
+                ≔ a! = 10.0_f32.powf(gain_db / 40.0);
+                ≔ sqrt_a! = a.sqrt();
+                ≔ b0! = a * ((a + 1.0) + (a - 1.0) * cos_omega + 2.0 * sqrt_a * alpha);
+                ≔ b1! = -2.0 * a * ((a - 1.0) + (a + 1.0) * cos_omega);
+                ≔ b2! = a * ((a + 1.0) + (a - 1.0) * cos_omega - 2.0 * sqrt_a * alpha);
+                ≔ a0! = (a + 1.0) - (a - 1.0) * cos_omega + 2.0 * sqrt_a * alpha;
+                ≔ a1! = 2.0 * ((a - 1.0) - (a + 1.0) * cos_omega);
+                ≔ a2! = (a + 1.0) - (a - 1.0) * cos_omega - 2.0 * sqrt_a * alpha;
+                (b0, b1, b2, a0, a1, a2)!
             }
         };
 
-        // Normalize by a0
+        // Normalize by a0 and return computed coefficients
         Self {
-            b0: b0 / a0,
-            b1: b1 / a0,
-            b2: b2 / a0,
-            a1: a1 / a0,
-            a2: a2 / a0,
-        }
+            b0: (b0 / a0)!,
+            b1: (b1 / a0)!,
+            b2: (b2 / a0)!,
+            a1: (a1 / a0)!,
+            a2: (a2 / a0)!,
+        }!
     }
 }
 
 /// Biquad filter with state.
+///
+/// Internal state (z1, z2) evolves during processing - neither external nor computed,
+/// it's accumulator state that persists between samples.
 //@ rune: derive(Debug, Clone)
 ☉ Σ BiquadFilter {
-    coeffs: BiquadCoeffs,
-    /// State variable z^-1.
+    coeffs!: BiquadCoeffs,   // Computed from parameters
+    /// State variable z^-1 (internal accumulator).
     z1: f32,
-    /// State variable z^-2.
+    /// State variable z^-2 (internal accumulator).
     z2: f32,
-    sample_rate: f32,
+    sample_rate~: f32,       // External from audio system
 }
 
 ⊢ BiquadFilter {
-    /// Creates a new biquad filter.
+    /// Creates a new biquad filter from external parameters.
     // must_use
-    ☉ rite new(filter_type: FilterType, freq: f32, q: f32, sample_rate: f32) -> Self {
+    ☉ rite new(filter_type~: FilterType, freq~: f32, q~: f32, sample_rate~: f32) -> Self! {
         Self {
             coeffs: BiquadCoeffs·calculate(filter_type, freq, q, sample_rate),
             z1: 0.0,
             z2: 0.0,
             sample_rate,
-        }
+        }!
     }
 
-    /// Updates the filter coefficients.
-    ☉ rite set_params(&Δ self, filter_type: FilterType, freq: f32, q: f32) {
+    /// Updates the filter coefficients from external parameters.
+    ☉ rite set_params(&Δ self, filter_type~: FilterType, freq~: f32, q~: f32) {
         self.coeffs = BiquadCoeffs·calculate(filter_type, freq, q, self.sample_rate);
     }
 
-    /// Returns the current coefficients.
+    /// Returns the current coefficients (computed).
     // must_use
-    ☉ rite coeffs(&self) -> &BiquadCoeffs {
+    ☉ rite coeffs(&self) -> &BiquadCoeffs! {
         &self.coeffs
     }
 }
 
 ⊢ Processor ∀ BiquadFilter {
-    rite process_sample(&Δ self, input: Sample) -> Sample {
-        // Transposed Direct Form II
-        ≔ output = self.coeffs.b0 * input + self.z1;
+    /// Process external sample through filter, producing computed output.
+    rite process_sample(&Δ self, input~: Sample) -> Sample! {
+        // Transposed Direct Form II - output is deterministically computed
+        ≔ output! = self.coeffs.b0 * input + self.z1;
+
+        // Update internal state (accumulator evolution)
         self.z1 = self.coeffs.b1 * input - self.coeffs.a1 * output + self.z2;
         self.z2 = self.coeffs.b2 * input - self.coeffs.a2 * output;
-        output
+
+        output!
     }
 
     rite reset(&Δ self) {

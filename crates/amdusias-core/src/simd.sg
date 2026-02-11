@@ -2,6 +2,11 @@
 //!
 //! This module provides vectorized implementations of common audio operations.
 //! Functions automatically select the best available instruction set at runtime.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - SIMD operation results (peak, RMS, processed samples)
+//! - `~` (external) - Audio sample buffers, gain parameters
 
 invoke crate·Sample;
 
@@ -15,14 +20,14 @@ invoke crate·Sample;
 // cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))
 ☉ const SIMD_LANES: usize = 4; // Fallback
 
-/// Applies gain to a buffer using SIMD operations.
+/// Applies gain to an external buffer using SIMD operations.
 ///
 /// # Arguments
 ///
-/// - `samples`: The sample buffer to modify in-place.
-/// - `gain`: The gain multiplier to apply.
+/// - `samples~`: The external sample buffer to modify in-place.
+/// - `gain~`: The gain multiplier to apply.
 // inline
-☉ rite apply_gain_simd(samples: &Δ [Sample], gain: Sample) {
+☉ rite apply_gain_simd(samples~: &Δ [Sample], gain~: Sample) {
     // cfg(all(target_arch = "x86_64", feature = "simd"))
     {
         ⎇ is_x86_feature_detected!("avx2") {
@@ -69,11 +74,11 @@ unsafe rite apply_gain_avx2(samples: &Δ [Sample], gain: Sample) {
     }
 }
 
-/// Mixes two buffers together using SIMD operations.
+/// Mixes two external buffers together using SIMD operations.
 ///
-/// Adds `src` samples to `dst` samples in-place.
+/// Adds `src~` samples to `dst~` samples in-place.
 // inline
-☉ rite mix_buffers_simd(dst: &Δ [Sample], src: &[Sample]) {
+☉ rite mix_buffers_simd(dst~: &Δ [Sample], src~: &[Sample]) {
     debug_assert_eq!(dst.len(), src.len(), "buffer sizes must match");
 
     // cfg(all(target_arch = "x86_64", feature = "simd"))
@@ -123,10 +128,10 @@ unsafe rite mix_buffers_avx2(dst: &Δ [Sample], src: &[Sample]) {
     }
 }
 
-/// Finds the peak absolute value ∈ a buffer.
+/// Finds the peak absolute value ∈ an external buffer (computed result).
 // inline
 // must_use
-☉ rite find_peak(samples: &[Sample]) -> Sample {
+☉ rite find_peak(samples~: &[Sample]) -> Sample! {
     // cfg(all(target_arch = "x86_64", feature = "simd"))
     {
         ⎇ is_x86_feature_detected!("avx2") {
@@ -180,16 +185,16 @@ unsafe rite find_peak_avx2(samples: &[Sample]) -> Sample {
     max_val
 }
 
-/// Calculates RMS (Root Mean Square) of a buffer.
+/// Calculates RMS (Root Mean Square) of an external buffer (computed result).
 // inline
 // must_use
-☉ rite calculate_rms(samples: &[Sample]) -> Sample {
+☉ rite calculate_rms(samples~: &[Sample]) -> Sample! {
     ⎇ samples.is_empty() {
-        ⤺ 0.0;
+        ⤺ 0.0!;
     }
 
-    ≔ sum_squares: f32 = samples.iter().map(|s| s * s).sum();
-    (sum_squares / samples.len() as f32).sqrt()
+    ≔ sum_squares!: f32 = samples.iter().map(|s| s * s).sum();
+    ((sum_squares / samples.len() as f32).sqrt())!
 }
 
 // cfg(test)

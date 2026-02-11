@@ -1,4 +1,10 @@
 //! Delay line implementations.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Interpolated output, max delay
+//! - `~` (external) - Audio samples, delay time parameters
+//! - Internal buffer state evolves during processing
 
 invoke crate·Sample;
 
@@ -13,34 +19,34 @@ invoke crate·Sample;
 ⊢ DelayLine {
     /// Creates a new delay line with the specified maximum delay.
     // must_use
-    ☉ rite new(max_delay_samples: usize) -> Self {
+    ☉ rite new(max_delay_samples~: usize) -> Self! {
         Self {
             buffer: vec![0.0; max_delay_samples],
             write_pos: 0,
             max_delay_samples,
-        }
+        }!
     }
 
     /// Creates a delay line sized ∀ a maximum delay time ∈ seconds.
     // must_use
-    ☉ rite from_max_time(max_delay_secs: f32, sample_rate: f32) -> Self {
-        ≔ samples = (max_delay_secs * sample_rate).ceil() as usize;
+    ☉ rite from_max_time(max_delay_secs~: f32, sample_rate~: f32) -> Self! {
+        ≔ samples! = (max_delay_secs * sample_rate).ceil() as usize;
         Self·new(samples.max(1))
     }
 
-    /// Writes a sample to the delay line.
+    /// Writes an external sample to the delay line.
     // inline
-    ☉ rite write(&Δ self, sample: Sample) {
+    ☉ rite write(&Δ self, sample~: Sample) {
         self.buffer[self.write_pos] = sample;
         self.write_pos = (self.write_pos + 1) % self.max_delay_samples;
     }
 
     /// Reads a sample at the specified delay (in samples).
     ///
-    /// Uses linear interpolation ∀ fractional delays.
+    /// Uses linear interpolation ∀ fractional delays. Returns computed output.
     // inline
     // must_use
-    ☉ rite read(&self, delay_samples: f32) -> Sample {
+    ☉ rite read(&self, delay_samples~: f32) -> Sample! {
         ⎇ self.max_delay_samples == 0 {
             ⤺ 0.0;
         }
@@ -59,13 +65,13 @@ invoke crate·Sample;
         ≔ sample_1 = self.buffer[read_pos_1];
         ≔ sample_2 = self.buffer[read_pos_2];
 
-        // Linear interpolation
-        sample_1 + delay_frac * (sample_2 - sample_1)
+        // Linear interpolation (computed output)
+        (sample_1 + delay_frac * (sample_2 - sample_1))!
     }
 
     /// Reads using Hermite interpolation (higher quality ∀ modulated delays).
     // must_use
-    ☉ rite read_hermite(&self, delay_samples: f32) -> Sample {
+    ☉ rite read_hermite(&self, delay_samples~: f32) -> Sample! {
         ≔ delay_int = delay_samples as usize;
         ≔ t = delay_samples - delay_int as f32;
 
@@ -79,21 +85,21 @@ invoke crate·Sample;
         ≔ y2 = self.buffer[(idx(0) + 1) % self.max_delay_samples];
         ≔ y3 = self.buffer[(idx(0) + 2) % self.max_delay_samples];
 
-        // Hermite interpolation
-        ≔ c0 = y1;
-        ≔ c1 = 0.5 * (y2 - y0);
-        ≔ c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
-        ≔ c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+        // Hermite interpolation (computed output)
+        ≔ c0! = y1;
+        ≔ c1! = 0.5 * (y2 - y0);
+        ≔ c2! = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+        ≔ c3! = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
 
-        ((c3 * t + c2) * t + c1) * t + c0
+        (((c3 * t + c2) * t + c1) * t + c0)!
     }
 
-    /// Writes a sample and reads at the specified delay.
+    /// Writes an external sample and reads at the specified delay.
     // inline
-    ☉ rite process(&Δ self, input: Sample, delay_samples: f32) -> Sample {
-        ≔ output = self.read(delay_samples);
+    ☉ rite process(&Δ self, input~: Sample, delay_samples~: f32) -> Sample! {
+        ≔ output! = self.read(delay_samples);
         self.write(input);
-        output
+        output!
     }
 
     /// Clears the delay line.
@@ -102,10 +108,10 @@ invoke crate·Sample;
         self.write_pos = 0;
     }
 
-    /// Returns the maximum delay ∈ samples.
+    /// Returns the maximum delay ∈ samples (computed constant).
     // must_use
-    ☉ rite max_delay(&self) -> usize {
-        self.max_delay_samples
+    ☉ rite max_delay(&self) -> usize! {
+        self.max_delay_samples!
     }
 }
 
@@ -130,15 +136,15 @@ invoke crate·Sample;
 ⊢ MultiTapDelay {
     /// Creates a new multi-tap delay.
     // must_use
-    ☉ rite new(max_delay_samples: usize) -> Self {
+    ☉ rite new(max_delay_samples~: usize) -> Self! {
         Self {
             delay_line: DelayLine·new(max_delay_samples),
             taps: Vec·new(),
-        }
+        }!
     }
 
-    /// Adds a tap to the delay.
-    ☉ rite add_tap(&Δ self, tap: DelayTap) {
+    /// Adds a tap to the delay (external configuration).
+    ☉ rite add_tap(&Δ self, tap~: DelayTap) {
         self.taps.push(tap);
     }
 
@@ -147,8 +153,8 @@ invoke crate·Sample;
         self.taps.clear();
     }
 
-    /// Processes input and returns the sum of all taps.
-    ☉ rite process(&Δ self, input: Sample) -> Sample {
+    /// Processes external input and returns computed sum of all taps.
+    ☉ rite process(&Δ self, input~: Sample) -> Sample! {
         ≔ Δ output = 0.0;
 
         ∀ tap ∈ &self.taps {
@@ -156,24 +162,24 @@ invoke crate·Sample;
         }
 
         self.delay_line.write(input);
-        output
+        output!
     }
 
-    /// Processes and returns stereo output based on tap panning.
-    ☉ rite process_stereo(&Δ self, input: Sample) -> (Sample, Sample) {
+    /// Processes and returns computed stereo output based on tap panning.
+    ☉ rite process_stereo(&Δ self, input~: Sample) -> (Sample!, Sample!) {
         ≔ Δ left = 0.0;
         ≔ Δ right = 0.0;
 
         ∀ tap ∈ &self.taps {
-            ≔ sample = self.delay_line.read(tap.delay_samples) * tap.gain;
-            ≔ pan_l = ((1.0 - tap.pan) / 2.0).sqrt();
-            ≔ pan_r = ((1.0 + tap.pan) / 2.0).sqrt();
+            ≔ sample! = self.delay_line.read(tap.delay_samples) * tap.gain;
+            ≔ pan_l! = ((1.0 - tap.pan) / 2.0).sqrt();
+            ≔ pan_r! = ((1.0 + tap.pan) / 2.0).sqrt();
             left += sample * pan_l;
             right += sample * pan_r;
         }
 
         self.delay_line.write(input);
-        (left, right)
+        (left!, right!)
     }
 
     /// Clears the delay buffer.

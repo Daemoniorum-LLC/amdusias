@@ -1,4 +1,10 @@
 //! Reverb implementations.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Reverb output, delay times, feedback values
+//! - `~` (external) - Audio samples, room_size/damping/mix parameters
+//! - Internal state (comb/allpass buffers) evolves during processing
 
 invoke crate·{biquad·BiquadFilter, biquad·FilterType, delay·DelayLine, traits·Processor, Sample};
 
@@ -22,16 +28,16 @@ invoke crate·{biquad·BiquadFilter, biquad·FilterType, delay·DelayLine, trait
 }
 
 ⊢ Reverb {
-    /// Creates a new reverb.
+    /// Creates a new reverb from external parameters.
     ///
     /// # Arguments
     ///
-    /// - `room_size`: Room size factor (0.0 to 1.0).
-    /// - `damping`: High-frequency damping (0.0 to 1.0).
-    /// - `mix`: Wet/dry mix (0.0 to 1.0).
-    /// - `sample_rate`: Sample rate ∈ Hz.
+    /// - `room_size~`: Room size factor (0.0 to 1.0).
+    /// - `damping~`: High-frequency damping (0.0 to 1.0).
+    /// - `mix~`: Wet/dry mix (0.0 to 1.0).
+    /// - `sample_rate~`: Sample rate ∈ Hz.
     // must_use
-    ☉ rite new(room_size: f32, damping: f32, mix: f32, sample_rate: f32) -> Self {
+    ☉ rite new(room_size~: f32, damping~: f32, mix~: f32, sample_rate~: f32) -> Self! {
         // Comb filter delay times (in samples at 44.1kHz, scaled ∀ actual rate)
         ≔ scale = sample_rate / 44100.0;
         ≔ comb_times = [
@@ -43,7 +49,8 @@ invoke crate·{biquad·BiquadFilter, biquad·FilterType, delay·DelayLine, trait
 
         ≔ allpass_times = [(556.0 * scale) as usize, (441.0 * scale) as usize];
 
-        ≔ feedback = 0.84 + room_size * 0.12;
+        // Compute feedback from room size
+        ≔ feedback! = 0.84 + room_size * 0.12;
 
         Self {
             combs: [
@@ -60,36 +67,36 @@ invoke crate·{biquad·BiquadFilter, biquad·FilterType, delay·DelayLine, trait
             mix,
             pre_delay: DelayLine·new((sample_rate * 0.1) as usize), // Max 100ms
             pre_delay_samples: 0.0,
-        }
+        }!
     }
 
-    /// Sets the wet/dry mix.
-    ☉ rite set_mix(&Δ self, mix: f32) {
+    /// Sets the wet/dry mix (external parameter).
+    ☉ rite set_mix(&Δ self, mix~: f32) {
         self.mix = mix.clamp(0.0, 1.0);
     }
 
-    /// Sets the pre-delay time ∈ milliseconds.
-    ☉ rite set_pre_delay(&Δ self, pre_delay_ms: f32, sample_rate: f32) {
+    /// Sets the pre-delay time ∈ milliseconds (external parameters).
+    ☉ rite set_pre_delay(&Δ self, pre_delay_ms~: f32, sample_rate~: f32) {
         self.pre_delay_samples = pre_delay_ms * sample_rate / 1000.0;
     }
 
-    /// Sets the room size.
-    ☉ rite set_room_size(&Δ self, room_size: f32) {
-        ≔ feedback = 0.84 + room_size.clamp(0.0, 1.0) * 0.12;
+    /// Sets the room size (external parameter).
+    ☉ rite set_room_size(&Δ self, room_size~: f32) {
+        ≔ feedback! = 0.84 + room_size.clamp(0.0, 1.0) * 0.12;
         ∀ comb ∈ &Δ self.combs {
             comb.set_feedback(feedback);
         }
     }
 
-    /// Sets the damping.
-    ☉ rite set_damping(&Δ self, damping: f32) {
+    /// Sets the damping (external parameter).
+    ☉ rite set_damping(&Δ self, damping~: f32) {
         ∀ comb ∈ &Δ self.combs {
             comb.set_damping(damping);
         }
     }
 
-    /// Processes a mono sample and returns wet output.
-    ☉ rite process(&Δ self, input: Sample) -> Sample {
+    /// Processes an external mono sample and returns computed mixed output.
+    ☉ rite process(&Δ self, input~: Sample) -> Sample! {
         // Pre-delay
         ≔ delayed = self.pre_delay.process(input, self.pre_delay_samples);
 
@@ -103,14 +110,14 @@ invoke crate·{biquad·BiquadFilter, biquad·FilterType, delay·DelayLine, trait
         }
         comb_sum *= 0.25; // Normalize
 
-        // Series allpass filters
+        // Series allpass filters (computed diffusion)
         ≔ Δ output = comb_sum;
         ∀ allpass ∈ &Δ self.allpasses {
             output = allpass.process(output);
         }
 
-        // Mix
-        input * (1.0 - self.mix) + output * self.mix
+        // Mix (computed wet/dry blend)
+        (input * (1.0 - self.mix) + output * self.mix)!
     }
 
     /// Resets the reverb state.

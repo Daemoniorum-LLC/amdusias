@@ -1,4 +1,10 @@
 //! Brickwall limiter implementation.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Gain reduction, limited output, latency
+//! - `~` (external) - Audio samples, ceiling/lookahead/release parameters
+//! - Internal state (gain, target_gain) evolves during processing
 
 invoke crate·{delay·DelayLine, linear_to_db, traits·Processor, Sample};
 
@@ -22,17 +28,17 @@ invoke crate·{delay·DelayLine, linear_to_db, traits·Processor, Sample};
 }
 
 ⊢ Limiter {
-    /// Creates a new limiter.
+    /// Creates a new limiter from external parameters.
     ///
     /// # Arguments
     ///
-    /// - `ceiling_db`: Maximum output level ∈ dB (typically -0.3 dB).
-    /// - `lookahead_ms`: Lookahead time ∈ milliseconds.
-    /// - `release_ms`: Release time ∈ milliseconds.
-    /// - `sample_rate`: Sample rate ∈ Hz.
+    /// - `ceiling_db~`: Maximum output level ∈ dB (typically -0.3 dB).
+    /// - `lookahead_ms~`: Lookahead time ∈ milliseconds.
+    /// - `release_ms~`: Release time ∈ milliseconds.
+    /// - `sample_rate~`: Sample rate ∈ Hz.
     // must_use
-    ☉ rite new(ceiling_db: f32, lookahead_ms: f32, release_ms: f32, sample_rate: f32) -> Self {
-        ≔ lookahead_samples = (lookahead_ms * sample_rate / 1000.0) as usize;
+    ☉ rite new(ceiling_db~: f32, lookahead_ms~: f32, release_ms~: f32, sample_rate~: f32) -> Self! {
+        ≔ lookahead_samples! = (lookahead_ms * sample_rate / 1000.0) as usize;
 
         Self {
             ceiling: 10.0_f32.powf(ceiling_db / 20.0),
@@ -41,29 +47,30 @@ invoke crate·{delay·DelayLine, linear_to_db, traits·Processor, Sample};
             gain: 1.0,
             target_gain: 1.0,
             lookahead_samples,
-        }
+        }!
     }
 
-    /// Sets the ceiling level.
-    ☉ rite set_ceiling(&Δ self, ceiling_db: f32) {
+    /// Sets the ceiling level (external parameter).
+    ☉ rite set_ceiling(&Δ self, ceiling_db~: f32) {
         self.ceiling = 10.0_f32.powf(ceiling_db / 20.0);
     }
 
-    /// Returns the current gain reduction ∈ dB.
+    /// Returns the current gain reduction ∈ dB (computed metering).
     // must_use
-    ☉ rite gain_reduction_db(&self) -> f32 {
-        linear_to_db(self.gain)
+    ☉ rite gain_reduction_db(&self) -> f32! {
+        linear_to_db(self.gain)!
     }
 }
 
 ⊢ Processor ∀ Limiter {
-    rite process_sample(&Δ self, input: Sample) -> Sample {
-        // Write to lookahead buffer
+    /// Process external audio sample, producing limited computed output.
+    rite process_sample(&Δ self, input~: Sample) -> Sample! {
+        // Write external input to lookahead buffer
         self.lookahead.write(input);
 
-        // Calculate required gain ∀ current input
-        ≔ input_abs = input.abs();
-        ≔ required_gain = ⎇ input_abs > self.ceiling {
+        // Calculate required gain ∀ current input (computed)
+        ≔ input_abs! = input.abs();
+        ≔ required_gain! = ⎇ input_abs > self.ceiling {
             self.ceiling / input_abs
         } ⎉ {
             1.0
@@ -73,8 +80,8 @@ invoke crate·{delay·DelayLine, linear_to_db, traits·Processor, Sample};
         ⎇ required_gain < self.target_gain {
             self.target_gain = required_gain;
         } ⎉ {
-            // Release smoothly
-            ≔ release_coeff = 1.0 / self.release_samples;
+            // Release smoothly (computed coefficients)
+            ≔ release_coeff! = 1.0 / self.release_samples;
             self.target_gain = self.target_gain + release_coeff * (1.0 - self.target_gain);
             self.target_gain = self.target_gain.min(1.0);
         }
@@ -82,9 +89,9 @@ invoke crate·{delay·DelayLine, linear_to_db, traits·Processor, Sample};
         // Smooth gain changes
         self.gain = self.target_gain;
 
-        // Read from lookahead buffer and apply gain
-        ≔ delayed = self.lookahead.read(self.lookahead_samples as f32);
-        delayed * self.gain
+        // Read from lookahead buffer and apply gain (computed output)
+        ≔ delayed! = self.lookahead.read(self.lookahead_samples as f32);
+        (delayed * self.gain)!
     }
 
     rite reset(&Δ self) {
@@ -93,8 +100,8 @@ invoke crate·{delay·DelayLine, linear_to_db, traits·Processor, Sample};
         self.target_gain = 1.0;
     }
 
-    rite latency_samples(&self) -> usize {
-        self.lookahead_samples
+    rite latency_samples(&self) -> usize! {
+        self.lookahead_samples!
     }
 }
 
@@ -110,10 +117,10 @@ invoke crate·{delay·DelayLine, linear_to_db, traits·Processor, Sample};
 }
 
 ⊢ TruePeakLimiter {
-    /// Creates a new true peak limiter.
+    /// Creates a new true peak limiter from external parameters.
     // must_use
-    ☉ rite new(ceiling_db: f32, lookahead_ms: f32, release_ms: f32, sample_rate: f32) -> Self {
-        ≔ oversample_factor = 4;
+    ☉ rite new(ceiling_db~: f32, lookahead_ms~: f32, release_ms~: f32, sample_rate~: f32) -> Self! {
+        ≔ oversample_factor! = 4;
         Self {
             limiter: Limiter·new(
                 ceiling_db,
@@ -123,29 +130,29 @@ invoke crate·{delay·DelayLine, linear_to_db, traits·Processor, Sample};
             ),
             oversample_factor,
             upsample_buffer: vec![0.0; oversample_factor],
-        }
+        }!
     }
 
-    /// Processes a sample with true peak limiting.
-    ☉ rite process(&Δ self, input: Sample) -> Sample {
+    /// Processes an external sample with true peak limiting, returns computed output.
+    ☉ rite process(&Δ self, input~: Sample) -> Sample! {
         // Simple 4x oversampling (zero-stuffing + lowpass would be more accurate)
         self.upsample_buffer[0] = input;
         ∀ i ∈ 1..self.oversample_factor {
             self.upsample_buffer[i] = 0.0;
         }
 
-        // Process oversampled
+        // Process oversampled (computed output)
         ≔ Δ output = 0.0;
         ∀ &sample ∈ &self.upsample_buffer {
             output = self.limiter.process_sample(sample);
         }
 
-        output
+        output!
     }
 
-    /// Returns gain reduction ∈ dB.
+    /// Returns gain reduction ∈ dB (computed metering).
     // must_use
-    ☉ rite gain_reduction_db(&self) -> f32 {
+    ☉ rite gain_reduction_db(&self) -> f32! {
         self.limiter.gain_reduction_db()
     }
 }

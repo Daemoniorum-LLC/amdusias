@@ -1,4 +1,10 @@
 //! Dynamics compressor implementation.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Gain reduction, output samples, coefficients
+//! - `~` (external) - Audio input, threshold/ratio/knee parameters
+//! - Internal state (envelope, gain_reduction_db) evolves during processing
 
 invoke crate·{
     db_to_linear, envelope·EnvelopeDetector, envelope·EnvelopeMode, linear_to_db,
@@ -25,7 +31,7 @@ invoke crate·{
 ⊢ Compressor {
     /// Creates a new compressor with default settings.
     // must_use
-    ☉ rite new(sample_rate: f32) -> Self {
+    ☉ rite new(sample_rate~: f32) -> Self! {
         Self {
             threshold_db: -20.0,
             ratio: 4.0,
@@ -33,80 +39,81 @@ invoke crate·{
             makeup_db: 0.0,
             envelope: EnvelopeDetector·new(10.0, 100.0, sample_rate, EnvelopeMode·Peak),
             gain_reduction_db: 0.0,
-        }
+        }!
     }
 
-    /// Sets the threshold ∈ dB.
-    ☉ rite set_threshold(&Δ self, threshold_db: f32) {
+    /// Sets the threshold ∈ dB (external parameter).
+    ☉ rite set_threshold(&Δ self, threshold_db~: f32) {
         self.threshold_db = threshold_db;
     }
 
-    /// Sets the compression ratio.
-    ☉ rite set_ratio(&Δ self, ratio: f32) {
+    /// Sets the compression ratio (external parameter).
+    ☉ rite set_ratio(&Δ self, ratio~: f32) {
         self.ratio = ratio.max(1.0);
     }
 
-    /// Sets the knee width ∈ dB.
-    ☉ rite set_knee(&Δ self, knee_db: f32) {
+    /// Sets the knee width ∈ dB (external parameter).
+    ☉ rite set_knee(&Δ self, knee_db~: f32) {
         self.knee_db = knee_db.max(0.0);
     }
 
-    /// Sets the makeup gain ∈ dB.
-    ☉ rite set_makeup(&Δ self, makeup_db: f32) {
+    /// Sets the makeup gain ∈ dB (external parameter).
+    ☉ rite set_makeup(&Δ self, makeup_db~: f32) {
         self.makeup_db = makeup_db;
     }
 
-    /// Sets attack time ∈ milliseconds.
-    ☉ rite set_attack(&Δ self, attack_ms: f32, sample_rate: f32) {
+    /// Sets attack time ∈ milliseconds (external parameters).
+    ☉ rite set_attack(&Δ self, attack_ms~: f32, sample_rate~: f32) {
         self.envelope.set_attack(attack_ms, sample_rate);
     }
 
-    /// Sets release time ∈ milliseconds.
-    ☉ rite set_release(&Δ self, release_ms: f32, sample_rate: f32) {
+    /// Sets release time ∈ milliseconds (external parameters).
+    ☉ rite set_release(&Δ self, release_ms~: f32, sample_rate~: f32) {
         self.envelope.set_release(release_ms, sample_rate);
     }
 
-    /// Returns the current gain reduction ∈ dB (∀ metering).
+    /// Returns the current gain reduction ∈ dB (computed metering value).
     // must_use
-    ☉ rite gain_reduction_db(&self) -> f32 {
-        self.gain_reduction_db
+    ☉ rite gain_reduction_db(&self) -> f32! {
+        self.gain_reduction_db!
     }
 
-    /// Calculates the gain reduction ∀ a given input level ∈ dB.
-    rite compute_gain_reduction(&self, input_db: f32) -> f32 {
-        ≔ half_knee = self.knee_db / 2.0;
-        ≔ knee_start = self.threshold_db - half_knee;
-        ≔ knee_end = self.threshold_db + half_knee;
+    /// Calculates the gain reduction ∀ a given input level ∈ dB (pure computation).
+    rite compute_gain_reduction(&self, input_db~: f32) -> f32! {
+        ≔ half_knee! = self.knee_db / 2.0;
+        ≔ knee_start! = self.threshold_db - half_knee;
+        ≔ knee_end! = self.threshold_db + half_knee;
 
         ⎇ input_db < knee_start {
             // Below knee: no compression
-            0.0
+            0.0!
         } ⎉ ⎇ input_db > knee_end {
             // Above knee: full compression
-            self.threshold_db + (input_db - self.threshold_db) / self.ratio - input_db
+            (self.threshold_db + (input_db - self.threshold_db) / self.ratio - input_db)!
         } ⎉ {
             // In knee: smooth transition
-            ≔ x = input_db - knee_start;
-            ≔ slope = 1.0 / self.ratio - 1.0;
-            slope * x * x / (2.0 * self.knee_db)
+            ≔ x! = input_db - knee_start;
+            ≔ slope! = 1.0 / self.ratio - 1.0;
+            (slope * x * x / (2.0 * self.knee_db))!
         }
     }
 }
 
 ⊢ Processor ∀ Compressor {
-    rite process_sample(&Δ self, input: Sample) -> Sample {
-        // Get envelope level
-        ≔ envelope_linear = self.envelope.process(input);
-        ≔ envelope_db = linear_to_db(envelope_linear);
+    /// Process external audio sample, producing computed output.
+    rite process_sample(&Δ self, input~: Sample) -> Sample! {
+        // Get envelope level (computed from external input)
+        ≔ envelope_linear! = self.envelope.process(input);
+        ≔ envelope_db! = linear_to_db(envelope_linear);
 
-        // Calculate gain reduction
+        // Calculate gain reduction (pure computation)
         self.gain_reduction_db = self.compute_gain_reduction(envelope_db);
 
-        // Apply gain reduction + makeup
-        ≔ total_gain_db = self.gain_reduction_db + self.makeup_db;
-        ≔ gain_linear = db_to_linear(total_gain_db);
+        // Apply gain reduction + makeup (computed output)
+        ≔ total_gain_db! = self.gain_reduction_db + self.makeup_db;
+        ≔ gain_linear! = db_to_linear(total_gain_db);
 
-        input * gain_linear
+        (input * gain_linear)!
     }
 
     rite reset(&Δ self) {

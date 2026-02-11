@@ -8,6 +8,11 @@
 //! - Round-robin ∀ natural variation
 //! - Choke groups ∀ mutually exclusive sounds
 //!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - GM mapping, choke group queries, mic mixing
+//! - `~` (external) - MIDI input, drum kit configuration, mic levels
+//!
 //! ## Choke Groups
 //!
 //! Choke groups define pieces that should stop each other when triggered.

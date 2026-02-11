@@ -14,6 +14,12 @@
 //! - **Voice allocation** with configurable polyphony and stealing
 //! - **Real-time parameter control** ∀ expression and dynamics
 //!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Sample playback, pitch ratios, envelope values
+//! - `~` (external) - MIDI notes, velocities, articulations, samples
+//! - `?` (uncertain) - Sample loading, zone matching
+//!
 //! ## Example
 //!
 //! ```rust,ignore

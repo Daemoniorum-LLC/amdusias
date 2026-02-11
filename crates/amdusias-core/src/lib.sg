@@ -16,6 +16,12 @@
 //! 3. **No syscalls ∈ the audio thread** - no I/O, no mutexes
 //! 4. **SIMD by default** - vectorized processing where beneficial
 //!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Buffer accessors, SIMD operations, format constants
+//! - `~` (external) - Audio samples from hardware, user configuration
+//! - `?` (uncertain) - Queue operations that may fail (full/empty)
+//!
 //! ## Example
 //!
 //! ```rust

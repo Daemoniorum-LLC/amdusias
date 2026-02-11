@@ -9,6 +9,12 @@
 //! - **Lock-free graph updates** from non-audio threads
 //! - **Flexible routing** (any node to any node)
 //!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Graph topology, processing order, latency calculations
+//! - `~` (external) - Audio buffers, node configurations, user connections
+//! - `?` (uncertain) - Graph operations that may fail (cycles, missing nodes)
+//!
 //! ## Example
 //!
 //! ```rust,ignore
