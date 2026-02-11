@@ -1,0 +1,5 @@
+//! macOS audio backend: CoreAudio.
+
+scroll coreaudio;
+
+☉ invoke coreaudio·CoreAudioBackend;

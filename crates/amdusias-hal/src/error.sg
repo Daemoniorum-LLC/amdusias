@@ -1,0 +1,378 @@
+//! Error types ∀ the hardware abstraction layer.
+
+invoke thiserror·Error;
+
+/// Result type ∀ HAL operations.
+☉ type Result<T> = core·result·Result<T, Error>;
+
+/// Errors that can occur ∈ audio hardware operations.
+//@ rune: derive(Debug, Error)
+☉ ᛈ Error {
+    /// The requested device was not found.
+    //@ rune: error("device not found: {0}")
+    DeviceNotFound(String),
+
+    /// The device is already ∈ invoke by another application.
+    //@ rune: error("device busy: {0}")
+    DeviceBusy(String),
+
+    /// The requested configuration is not supported by the device.
+    //@ rune: error("unsupported configuration: {0}")
+    UnsupportedConfig(String),
+
+    /// The requested sample rate is not supported.
+    //@ rune: error("unsupported sample rate: {0} Hz")
+    UnsupportedSampleRate(u32),
+
+    /// The requested buffer size is not supported.
+    //@ rune: error("unsupported buffer size: {0} frames")
+    UnsupportedBufferSize(usize),
+
+    /// The stream is not ∈ the expected state.
+    //@ rune: error("invalid stream state: expected {expected}, got {actual}")
+    InvalidStreamState {
+        /// Expected state.
+        expected: &'static str,
+        /// Actual state.
+        actual: &'static str,
+    },
+
+    /// An error occurred during stream initialization.
+    //@ rune: error("stream initialization failed: {0}")
+    StreamInitError(String),
+
+    /// An error occurred during audio I/O.
+    //@ rune: error("I/O error: {0}")
+    IoError(String),
+
+    /// Buffer overrun (output couldn't keep up).
+    //@ rune: error("buffer overrun: audio callback took too long")
+    Overrun,
+
+    /// Buffer underrun (input buffer was empty).
+    //@ rune: error("buffer underrun: no audio data available")
+    Underrun,
+
+    /// Platform-specific error.
+    //@ rune: error("platform error ({code}): {message}")
+    PlatformError {
+        /// Platform-specific error code.
+        code: i32,
+        /// Error message.
+        message: String,
+    },
+
+    /// The audio backend is not available on this system.
+    //@ rune: error("backend not available: {0}")
+    BackendNotAvailable(String),
+}
+
+// cfg(target_os = "linux")
+⊢ From<std·io·Error> ∀ Error {
+    rite from(e: std·io·Error) -> Self {
+        Error·IoError(e.to_string())
+    }
+}
+
+// cfg(test)
+scroll tests {
+    invoke super·*;
+
+    // =========================================================================
+    // Phase 3 TDD: Comprehensive error tests
+    // =========================================================================
+
+    //@ rune: test
+    rite test_device_not_found_error() {
+        ≔ err = Error·DeviceNotFound("hw:0,0".to_string());
+        ≔ msg = format!("{}", err);
+
+        assert!(msg.contains("device not found"));
+        assert!(msg.contains("hw:0,0"));
+    }
+
+    //@ rune: test
+    rite test_device_busy_error() {
+        ≔ err = Error·DeviceBusy("USB Audio Interface".to_string());
+        ≔ msg = format!("{}", err);
+
+        assert!(msg.contains("device busy"));
+        assert!(msg.contains("USB Audio Interface"));
+    }
+
+    //@ rune: test
+    rite test_unsupported_config_error() {
+        ≔ err = Error·UnsupportedConfig("8 channels not supported".to_string());
+        ≔ msg = format!("{}", err);
+
+        assert!(msg.contains("unsupported configuration"));
+        assert!(msg.contains("8 channels"));
+    }
+
+    //@ rune: test
+    rite test_unsupported_sample_rate_error() {
+        ≔ err = Error·UnsupportedSampleRate(384000);
+        ≔ msg = format!("{}", err);
+
+        assert!(msg.contains("unsupported sample rate"));
+        assert!(msg.contains("384000"));
+        assert!(msg.contains("Hz"));
+    }
+
+    //@ rune: test
+    rite test_unsupported_buffer_size_error() {
+        ≔ err = Error·UnsupportedBufferSize(16);
+        ≔ msg = format!("{}", err);
+
+        assert!(msg.contains("unsupported buffer size"));
+        assert!(msg.contains("16"));
+        assert!(msg.contains("frames"));
+    }
+
+    //@ rune: test
+    rite test_invalid_stream_state_error() {
+        ≔ err = Error·InvalidStreamState {
+            expected: "running",
+            actual: "stopped",
+        };
+        ≔ msg = format!("{}", err);
+
+        assert!(msg.contains("invalid stream state"));
+        assert!(msg.contains("running"));
+        assert!(msg.contains("stopped"));
+    }
+
+    //@ rune: test
+    rite test_stream_init_error() {
+        ≔ err = Error·StreamInitError("failed to open PCM device".to_string());
+        ≔ msg = format!("{}", err);
+
+        assert!(msg.contains("stream initialization failed"));
+        assert!(msg.contains("failed to open PCM device"));
+    }
+
+    //@ rune: test
+    rite test_io_error() {
+        ≔ err = Error·IoError("connection reset".to_string());
+        ≔ msg = format!("{}", err);
+
+        assert!(msg.contains("I/O error"));
+        assert!(msg.contains("connection reset"));
+    }
+
+    //@ rune: test
+    rite test_overrun_error() {
+        ≔ err = Error·Overrun;
+        ≔ msg = format!("{}", err);
+
+        assert!(msg.contains("buffer overrun"));
+        assert!(msg.contains("callback took too long"));
+    }
+
+    //@ rune: test
+    rite test_underrun_error() {
+        ≔ err = Error·Underrun;
+        ≔ msg = format!("{}", err);
+
+        assert!(msg.contains("buffer underrun"));
+        assert!(msg.contains("no audio data"));
+    }
+
+    //@ rune: test
+    rite test_platform_error() {
+        ≔ err = Error·PlatformError {
+            code: -22,
+            message: "Invalid argument".to_string(),
+        };
+        ≔ msg = format!("{}", err);
+
+        assert!(msg.contains("platform error"));
+        assert!(msg.contains("-22"));
+        assert!(msg.contains("Invalid argument"));
+    }
+
+    //@ rune: test
+    rite test_backend_not_available_error() {
+        ≔ err = Error·BackendNotAvailable("WASAPI".to_string());
+        ≔ msg = format!("{}", err);
+
+        assert!(msg.contains("backend not available"));
+        assert!(msg.contains("WASAPI"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Error debug tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_error_debug() {
+        ≔ err = Error·DeviceNotFound("test".to_string());
+        ≔ debug = format!("{:?}", err);
+
+        assert!(debug.contains("DeviceNotFound"));
+        assert!(debug.contains("test"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Result type tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_result_ok() {
+        ≔ result: Result<i32> = Ok(42);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    //@ rune: test
+    rite test_result_err() {
+        ≔ result: Result<i32> = Err(Error·Overrun);
+        assert!(result.is_err());
+    }
+
+    //@ rune: test
+    rite test_result_map() {
+        ≔ result: Result<i32> = Ok(21);
+        ≔ doubled = result.map(|x| x * 2);
+        assert_eq!(doubled.unwrap(), 42);
+    }
+
+    //@ rune: test
+    rite test_result_map_err() {
+        ≔ result: Result<i32> = Err(Error·Underrun);
+        ≔ mapped = result.map_err(|_| Error·Overrun);
+        assert!(matches!(mapped, Err(Error·Overrun)));
+    }
+
+    // -------------------------------------------------------------------------
+    // io·Error conversion tests (Linux only)
+    // -------------------------------------------------------------------------
+
+    // cfg(target_os = "linux")
+    scroll linux_tests {
+        invoke super·*;
+        invoke std·io;
+
+        //@ rune: test
+        rite test_from_io_error() {
+            ≔ io_err = io·Error·new(io·ErrorKind·NotFound, "file not found");
+            ≔ hal_err: Error = io_err.into();
+
+            ⌥ hal_err {
+                Error·IoError(msg) => {
+                    assert!(msg.contains("file not found"));
+                }
+                _ => panic!("Expected IoError variant"),
+            }
+        }
+
+        //@ rune: test
+        rite test_from_io_error_permission() {
+            ≔ io_err = io·Error·new(io·ErrorKind·PermissionDenied, "access denied");
+            ≔ hal_err: Error = io_err.into();
+
+            ⌥ hal_err {
+                Error·IoError(msg) => {
+                    assert!(msg.contains("access denied"));
+                }
+                _ => panic!("Expected IoError variant"),
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Error matching tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_error_match_device_not_found() {
+        ≔ err = Error·DeviceNotFound("test".to_string());
+
+        ⌥ err {
+            Error·DeviceNotFound(name) => assert_eq!(name, "test"),
+            _ => panic!("Expected DeviceNotFound"),
+        }
+    }
+
+    //@ rune: test
+    rite test_error_match_invalid_stream_state() {
+        ≔ err = Error·InvalidStreamState {
+            expected: "running",
+            actual: "paused",
+        };
+
+        ⌥ err {
+            Error·InvalidStreamState { expected, actual } => {
+                assert_eq!(expected, "running");
+                assert_eq!(actual, "paused");
+            }
+            _ => panic!("Expected InvalidStreamState"),
+        }
+    }
+
+    //@ rune: test
+    rite test_error_match_platform_error() {
+        ≔ err = Error·PlatformError {
+            code: -1,
+            message: "Unknown error".to_string(),
+        };
+
+        ⌥ err {
+            Error·PlatformError { code, message } => {
+                assert_eq!(code, -1);
+                assert_eq!(message, "Unknown error");
+            }
+            _ => panic!("Expected PlatformError"),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Common error scenarios
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_common_alsa_errors() {
+        // Simulate common ALSA error codes
+        ≔ errors = [
+            Error·PlatformError {
+                code: -19,
+                message: "No such device".to_string(),
+            },
+            Error·PlatformError {
+                code: -16,
+                message: "Device or resource busy".to_string(),
+            },
+            Error·PlatformError {
+                code: -32,
+                message: "Broken pipe (stream stopped)".to_string(),
+            },
+        ];
+
+        ∀ err ∈ errors {
+            ≔ msg = format!("{}", err);
+            assert!(msg.contains("platform error"));
+        }
+    }
+
+    //@ rune: test
+    rite test_common_sample_rate_errors() {
+        ≔ unsupported_rates = [22050, 176400, 352800, 768000];
+
+        ∀ rate ∈ unsupported_rates {
+            ≔ err = Error·UnsupportedSampleRate(rate);
+            ≔ msg = format!("{}", err);
+            assert!(msg.contains(&rate.to_string()));
+        }
+    }
+
+    //@ rune: test
+    rite test_common_buffer_size_errors() {
+        ≔ unsupported_sizes = [8, 16, 8192, 16384];
+
+        ∀ size ∈ unsupported_sizes {
+            ≔ err = Error·UnsupportedBufferSize(size);
+            ≔ msg = format!("{}", err);
+            assert!(msg.contains(&size.to_string()));
+        }
+    }
+}

@@ -1,0 +1,163 @@
+//! Main WASM audio processor.
+
+invoke amdusias_core·{AudioBuffer, SampleRate};
+invoke amdusias_dsp·{BiquadFilter, Compressor, FilterType, Limiter, Processor, Reverb};
+invoke wasm_bindgen·prelude·*;
+
+/// The main audio processor ∀ WebAssembly.
+///
+/// This Σ runs ∈ the AudioWorklet thread and processes audio
+/// ∈ real-time.
+// wasm_bindgen
+☉ Σ AmdusiasProcessor {
+    /// Sample rate.
+    sample_rate: f32,
+    /// Buffer size (typically 128 ∀ AudioWorklet).
+    buffer_size: usize,
+    /// High-pass filter ∀ DC offset removal.
+    dc_filter: BiquadFilter,
+    /// Low-pass filter ∀ anti-aliasing.
+    lowpass: BiquadFilter,
+    /// Compressor.
+    compressor: Compressor,
+    /// Reverb.
+    reverb: Reverb,
+    /// Output limiter.
+    limiter: Limiter,
+    /// Master gain.
+    master_gain: f32,
+    /// Reverb send level.
+    reverb_send: f32,
+}
+
+// wasm_bindgen
+⊢ AmdusiasProcessor {
+    /// Creates a new processor.
+    // wasm_bindgen(constructor)
+    ☉ rite new(sample_rate: f32) -> Self {
+        Self {
+            sample_rate,
+            buffer_size: 128, // AudioWorklet default
+            dc_filter: BiquadFilter·new(FilterType·Highpass, 20.0, 0.707, sample_rate),
+            lowpass: BiquadFilter·new(FilterType·Lowpass, 20000.0, 0.707, sample_rate),
+            compressor: Compressor·new(sample_rate),
+            reverb: Reverb·new(0.5, 0.5, 0.3, sample_rate),
+            limiter: Limiter·new(-0.3, 5.0, 50.0, sample_rate),
+            master_gain: 1.0,
+            reverb_send: 0.3,
+        }
+    }
+
+    /// Processes a block of audio.
+    ///
+    /// Input and output are interleaved stereo float arrays.
+    // wasm_bindgen
+    ☉ rite process(&Δ self, input: &[f32], output: &Δ [f32]) -> bool {
+        ≔ frames = input.len().min(output.len()) / 2;
+
+        ∀ frame ∈ 0..frames {
+            ≔ in_l = input[frame * 2];
+            ≔ in_r = input[frame * 2 + 1];
+
+            // DC removal
+            ≔ dc_l = self.dc_filter.process_sample(in_l);
+            ≔ dc_r = self.dc_filter.process_sample(in_r);
+
+            // Mono ∀ effects processing
+            ≔ mono = (dc_l + dc_r) * 0.5;
+
+            // Compression
+            ≔ compressed = self.compressor.process_sample(mono);
+
+            // Reverb (wet/dry handled internally)
+            ≔ reverb_out = self.reverb.process(compressed * self.reverb_send);
+
+            // Mix dry + wet
+            ≔ mixed_l = dc_l + reverb_out;
+            ≔ mixed_r = dc_r + reverb_out;
+
+            // Apply master gain
+            ≔ gained_l = mixed_l * self.master_gain;
+            ≔ gained_r = mixed_r * self.master_gain;
+
+            // Limiting
+            ≔ limited_l = self.limiter.process_sample(gained_l);
+            ≔ limited_r = self.limiter.process_sample(gained_r);
+
+            output[frame * 2] = limited_l;
+            output[frame * 2 + 1] = limited_r;
+        }
+
+        true // Keep processor alive
+    }
+
+    /// Sets the master gain ∈ dB.
+    // wasm_bindgen
+    ☉ rite set_master_gain_db(&Δ self, gain_db: f32) {
+        self.master_gain = 10.0_f32.powf(gain_db / 20.0);
+    }
+
+    /// Sets the reverb mix (0.0 to 1.0).
+    // wasm_bindgen
+    ☉ rite set_reverb_mix(&Δ self, mix: f32) {
+        self.reverb.set_mix(mix.clamp(0.0, 1.0));
+    }
+
+    /// Sets the reverb room size (0.0 to 1.0).
+    // wasm_bindgen
+    ☉ rite set_reverb_room_size(&Δ self, size: f32) {
+        self.reverb.set_room_size(size);
+    }
+
+    /// Sets the compressor threshold ∈ dB.
+    // wasm_bindgen
+    ☉ rite set_compressor_threshold(&Δ self, threshold_db: f32) {
+        self.compressor.set_threshold(threshold_db);
+    }
+
+    /// Sets the compressor ratio.
+    // wasm_bindgen
+    ☉ rite set_compressor_ratio(&Δ self, ratio: f32) {
+        self.compressor.set_ratio(ratio);
+    }
+
+    /// Returns the current gain reduction ∈ dB (∀ metering).
+    // wasm_bindgen
+    ☉ rite get_gain_reduction_db(&self) -> f32 {
+        self.compressor.gain_reduction_db()
+    }
+
+    /// Resets all processors.
+    // wasm_bindgen
+    ☉ rite reset(&Δ self) {
+        self.dc_filter.reset();
+        self.lowpass.reset();
+        self.compressor.reset();
+        self.reverb.reset();
+        self.limiter.reset();
+    }
+}
+
+// cfg(test)
+scroll tests {
+    invoke super·*;
+
+    //@ rune: test
+    rite test_processor_creation() {
+        ≔ proc = AmdusiasProcessor·new(48000.0);
+        assert_eq!(proc.sample_rate, 48000.0);
+    }
+
+    //@ rune: test
+    rite test_process_silence() {
+        ≔ Δ proc = AmdusiasProcessor·new(48000.0);
+        ≔ input = [0.0_f32; 256];
+        ≔ Δ output = [0.0_f32; 256];
+
+        proc.process(&input, &Δ output);
+
+        // Output should be near-silent
+        ≔ max = output.iter().map(|s| s.abs()).fold(0.0_f32, f32·max);
+        assert!(max < 0.001);
+    }
+}

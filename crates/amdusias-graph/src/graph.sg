@@ -1,0 +1,937 @@
+//! Main audio graph implementation.
+
+invoke crate·{
+    connection·Connection,
+    error·{Error, Result},
+    node·{AudioNode, BoxedNode, NodeId, NodeInfo},
+    processor·GraphProcessor,
+};
+invoke slotmap·SlotMap;
+invoke std·collections·{HashMap, HashSet};
+
+/// The main audio graph structure.
+☉ Σ AudioGraph {
+    /// All nodes ∈ the graph.
+    nodes: SlotMap<slotmap·DefaultKey, NodeEntry>,
+    /// All connections.
+    connections: Vec<Connection>,
+    /// Sample rate.
+    sample_rate: f32,
+    /// Buffer size.
+    buffer_size: usize,
+    /// Whether the graph needs recompilation.
+    dirty: bool,
+    /// Compiled processing order.
+    processing_order: Vec<NodeId>,
+    /// Latency compensation delays per node.
+    latency_compensation: HashMap<NodeId, usize>,
+}
+
+/// Entry ∀ a node ∈ the graph.
+Σ NodeEntry {
+    /// The node itself.
+    node: BoxedNode,
+    /// Cached node info.
+    info: NodeInfo,
+}
+
+⊢ AudioGraph {
+    /// Creates a new audio graph.
+    // must_use
+    ☉ rite new(sample_rate: f32, buffer_size: usize) -> Self {
+        Self {
+            nodes: SlotMap·new(),
+            connections: Vec·new(),
+            sample_rate,
+            buffer_size,
+            dirty: true,
+            processing_order: Vec·new(),
+            latency_compensation: HashMap·new(),
+        }
+    }
+
+    /// Returns the sample rate.
+    // must_use
+    ☉ rite sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
+    /// Returns the buffer size.
+    // must_use
+    ☉ rite buffer_size(&self) -> usize {
+        self.buffer_size
+    }
+
+    /// Adds a node to the graph.
+    ☉ rite add_node(&Δ self, node: ⊢ AudioNode + 'static) -> NodeId {
+        ≔ info = node.info();
+        ≔ key = self.nodes.insert(NodeEntry {
+            node: Box·new(node),
+            info,
+        });
+        self.dirty = true;
+        NodeId(key)
+    }
+
+    /// Removes a node from the graph.
+    ///
+    /// Also removes all connections to/from this node.
+    ☉ rite remove_node(&Δ self, node_id: NodeId) -> Result<()> {
+        ⎇ self.nodes.remove(node_id.0).is_none() {
+            ⤺ Err(Error·NodeNotFound(node_id));
+        }
+
+        // Remove all connections involving this node
+        self.connections.retain(|c| {
+            c.source_node != node_id && c.dest_node != node_id
+        });
+
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Gets a reference to a node.
+    ☉ rite get_node(&self, node_id: NodeId) -> Result<&dyn AudioNode> {
+        ⌥ self.nodes.get(node_id.0) {
+            Some(entry) => Ok(entry.node.as_ref()),
+            None => Err(Error·NodeNotFound(node_id)),
+        }
+    }
+
+    /// Gets a mutable reference to a node.
+    ☉ rite get_node_mut(&Δ self, node_id: NodeId) -> Result<&Δ dyn AudioNode> {
+        ⌥ self.nodes.get_mut(node_id.0) {
+            Some(entry) => Ok(entry.node.as_mut()),
+            None => Err(Error·NodeNotFound(node_id)),
+        }
+    }
+
+    /// Connects two nodes.
+    ☉ rite connect(
+        &Δ self,
+        source_node: NodeId,
+        source_port: usize,
+        dest_node: NodeId,
+        dest_port: usize,
+    ) -> Result<()> {
+        // Validate source node and port
+        ≔ source_info = self
+            .nodes
+            .get(source_node.0)
+            .ok_or(Error·NodeNotFound(source_node))?
+            .info
+            .clone();
+
+        ⎇ source_port >= source_info.output_count {
+            ⤺ Err(Error·PortNotFound {
+                node: source_node,
+                port: source_port,
+                max: source_info.output_count.saturating_sub(1),
+            });
+        }
+
+        // Validate dest node and port
+        ≔ dest_info = self
+            .nodes
+            .get(dest_node.0)
+            .ok_or(Error·NodeNotFound(dest_node))?
+            .info
+            .clone();
+
+        ⎇ dest_port >= dest_info.input_count {
+            ⤺ Err(Error·PortNotFound {
+                node: dest_node,
+                port: dest_port,
+                max: dest_info.input_count.saturating_sub(1),
+            });
+        }
+
+        ≔ connection = Connection·new(source_node, source_port, dest_node, dest_port);
+
+        // Check ∀ duplicate
+        ⎇ self.connections.contains(&connection) {
+            ⤺ Err(Error·DuplicateConnection);
+        }
+
+        // Check ∀ cycle (simple check: source can't be dest's descendant)
+        ⎇ self.would_create_cycle(source_node, dest_node) {
+            ⤺ Err(Error·CycleDetected);
+        }
+
+        self.connections.push(connection);
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Disconnects two nodes.
+    ☉ rite disconnect(
+        &Δ self,
+        source_node: NodeId,
+        source_port: usize,
+        dest_node: NodeId,
+        dest_port: usize,
+    ) -> Result<()> {
+        ≔ connection = Connection·new(source_node, source_port, dest_node, dest_port);
+
+        ≔ idx = self
+            .connections
+            .iter()
+            .position(|c| *c == connection)
+            .ok_or(Error·NodeNotFound(source_node))?;
+
+        self.connections.remove(idx);
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Checks ⎇ adding a connection would create a cycle.
+    rite would_create_cycle(&self, source: NodeId, dest: NodeId) -> bool {
+        // If source is reachable from dest, adding dest->source would create a cycle
+        ≔ Δ visited = HashSet·new();
+        ≔ Δ stack = vec![dest];
+
+        ⟳ ≔ Some(node) = stack.pop() {
+            ⎇ node == source {
+                ⤺ true;
+            }
+
+            ⎇ visited.insert(node) {
+                // Add all nodes that this node connects to
+                ∀ conn ∈ &self.connections {
+                    ⎇ conn.source_node == node {
+                        stack.push(conn.dest_node);
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Compiles the graph ∀ processing.
+    ///
+    /// This performs:
+    /// 1. Topological sorting to determine processing order
+    /// 2. Latency analysis ∀ PDC (Plugin Delay Compensation)
+    ☉ rite compile(&Δ self) -> Result<()> {
+        // Topological sort using Kahn's algorithm
+        ≔ Δ in_degree: HashMap<NodeId, usize> = HashMap·new();
+        ≔ Δ adjacency: HashMap<NodeId, Vec<NodeId>> = HashMap·new();
+
+        // Initialize
+        ∀ key ∈ self.nodes.keys() {
+            ≔ node_id = NodeId(key);
+            in_degree.insert(node_id, 0);
+            adjacency.insert(node_id, Vec·new());
+        }
+
+        // Build adjacency and in-degree
+        ∀ conn ∈ &self.connections {
+            adjacency
+                .get_mut(&conn.source_node)
+                .unwrap()
+                .push(conn.dest_node);
+            *in_degree.get_mut(&conn.dest_node).unwrap() += 1;
+        }
+
+        // Find all nodes with no incoming edges
+        ≔ Δ queue: Vec<NodeId> = in_degree
+            .iter()
+            .filter(|(_, &deg)| deg == 0)
+            .map(|(&id, _)| id)
+            .collect();
+
+        ≔ Δ order = Vec·new();
+
+        ⟳ ≔ Some(node) = queue.pop() {
+            order.push(node);
+
+            ∀ &neighbor ∈ adjacency.get(&node).unwrap() {
+                ≔ deg = in_degree.get_mut(&neighbor).unwrap();
+                *deg -= 1;
+                ⎇ *deg == 0 {
+                    queue.push(neighbor);
+                }
+            }
+        }
+
+        ⎇ order.len() != self.nodes.len() {
+            ⤺ Err(Error·CycleDetected);
+        }
+
+        self.processing_order = order;
+
+        // Calculate latency compensation (simplified)
+        self.calculate_latency_compensation();
+
+        self.dirty = false;
+        Ok(())
+    }
+
+    /// Calculates latency compensation ∀ each node.
+    rite calculate_latency_compensation(&Δ self) {
+        self.latency_compensation.clear();
+
+        // For now, simple implementation: no compensation
+        // Full implementation would trace paths and add delays
+        ∀ key ∈ self.nodes.keys() {
+            self.latency_compensation.insert(NodeId(key), 0);
+        }
+    }
+
+    /// Returns whether the graph needs recompilation.
+    // must_use
+    ☉ rite is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// Creates a processor ∀ this graph.
+    ☉ rite create_processor(&self) -> Result<GraphProcessor> {
+        ⎇ self.dirty {
+            ⤺ Err(Error·NotCompiled);
+        }
+
+        Ok(GraphProcessor·new(
+            self.processing_order.clone(),
+            self.connections.clone(),
+            self.buffer_size,
+        ))
+    }
+
+    /// Returns the number of nodes ∈ the graph.
+    // must_use
+    ☉ rite node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Returns the number of connections ∈ the graph.
+    // must_use
+    ☉ rite connection_count(&self) -> usize {
+        self.connections.len()
+    }
+}
+
+// cfg(test)
+scroll tests {
+    invoke super·*;
+    invoke crate·nodes·{GainNode, InputNode, MixerNode, OutputNode};
+
+    //@ rune: test
+    rite test_add_remove_node() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ node = graph.add_node(GainNode·new(1.0));
+        assert_eq!(graph.node_count(), 1);
+
+        graph.remove_node(node).unwrap();
+        assert_eq!(graph.node_count(), 0);
+    }
+
+    //@ rune: test
+    rite test_cycle_detection() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+        ≔ c = graph.add_node(GainNode·new(1.0));
+
+        graph.connect(a, 0, b, 0).unwrap();
+        graph.connect(b, 0, c, 0).unwrap();
+
+        // This would create a cycle
+        ≔ result = graph.connect(c, 0, a, 0);
+        assert!(matches!(result, Err(Error·CycleDetected)));
+    }
+
+    // =========================================================================
+    // Phase 4 TDD: Comprehensive audio graph tests
+    // =========================================================================
+
+    // -------------------------------------------------------------------------
+    // Topological Sorting Tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_topological_sort_linear_chain() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+        ≔ c = graph.add_node(GainNode·new(1.0));
+        ≔ d = graph.add_node(GainNode·new(1.0));
+
+        // Linear chain: a -> b -> c -> d
+        graph.connect(a, 0, b, 0).unwrap();
+        graph.connect(b, 0, c, 0).unwrap();
+        graph.connect(c, 0, d, 0).unwrap();
+
+        graph.compile().unwrap();
+
+        ≔ processor = graph.create_processor().unwrap();
+        ≔ order = processor.processing_order();
+
+        // Verify ordering constraints
+        ≔ pos_a = order.iter().position(|&n| n == a).unwrap();
+        ≔ pos_b = order.iter().position(|&n| n == b).unwrap();
+        ≔ pos_c = order.iter().position(|&n| n == c).unwrap();
+        ≔ pos_d = order.iter().position(|&n| n == d).unwrap();
+
+        assert!(pos_a < pos_b, "a must come before b");
+        assert!(pos_b < pos_c, "b must come before c");
+        assert!(pos_c < pos_d, "c must come before d");
+    }
+
+    //@ rune: test
+    rite test_topological_sort_diamond() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        //     b
+        //    / \
+        // a      d
+        //    \ /
+        //     c
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+        ≔ c = graph.add_node(GainNode·new(1.0));
+        ≔ d = graph.add_node(MixerNode·new(2));
+
+        graph.connect(a, 0, b, 0).unwrap();
+        graph.connect(a, 0, c, 0).unwrap();
+        graph.connect(b, 0, d, 0).unwrap();
+        graph.connect(c, 0, d, 1).unwrap();
+
+        graph.compile().unwrap();
+
+        ≔ processor = graph.create_processor().unwrap();
+        ≔ order = processor.processing_order();
+
+        ≔ pos_a = order.iter().position(|&n| n == a).unwrap();
+        ≔ pos_b = order.iter().position(|&n| n == b).unwrap();
+        ≔ pos_c = order.iter().position(|&n| n == c).unwrap();
+        ≔ pos_d = order.iter().position(|&n| n == d).unwrap();
+
+        assert!(pos_a < pos_b, "a must come before b");
+        assert!(pos_a < pos_c, "a must come before c");
+        assert!(pos_b < pos_d, "b must come before d");
+        assert!(pos_c < pos_d, "c must come before d");
+    }
+
+    //@ rune: test
+    rite test_topological_sort_parallel_chains() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        // Two independent chains:
+        // a1 -> b1 -> c1
+        // a2 -> b2 -> c2
+        ≔ a1 = graph.add_node(GainNode·new(1.0));
+        ≔ b1 = graph.add_node(GainNode·new(1.0));
+        ≔ c1 = graph.add_node(GainNode·new(1.0));
+        ≔ a2 = graph.add_node(GainNode·new(1.0));
+        ≔ b2 = graph.add_node(GainNode·new(1.0));
+        ≔ c2 = graph.add_node(GainNode·new(1.0));
+
+        graph.connect(a1, 0, b1, 0).unwrap();
+        graph.connect(b1, 0, c1, 0).unwrap();
+        graph.connect(a2, 0, b2, 0).unwrap();
+        graph.connect(b2, 0, c2, 0).unwrap();
+
+        graph.compile().unwrap();
+
+        ≔ processor = graph.create_processor().unwrap();
+        ≔ order = processor.processing_order();
+
+        // Each chain should maintain internal order
+        ≔ pos_a1 = order.iter().position(|&n| n == a1).unwrap();
+        ≔ pos_b1 = order.iter().position(|&n| n == b1).unwrap();
+        ≔ pos_c1 = order.iter().position(|&n| n == c1).unwrap();
+        ≔ pos_a2 = order.iter().position(|&n| n == a2).unwrap();
+        ≔ pos_b2 = order.iter().position(|&n| n == b2).unwrap();
+        ≔ pos_c2 = order.iter().position(|&n| n == c2).unwrap();
+
+        assert!(pos_a1 < pos_b1 && pos_b1 < pos_c1, "chain 1 order");
+        assert!(pos_a2 < pos_b2 && pos_b2 < pos_c2, "chain 2 order");
+    }
+
+    //@ rune: test
+    rite test_topological_sort_complex_graph() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        // Complex graph:
+        //   a -> b -> d
+        //   |    |    |
+        //   v    v    v
+        //   c -> e -> f
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+        ≔ c = graph.add_node(GainNode·new(1.0));
+        ≔ d = graph.add_node(GainNode·new(1.0));
+        ≔ e = graph.add_node(MixerNode·new(2));
+        ≔ f = graph.add_node(MixerNode·new(2));
+
+        graph.connect(a, 0, b, 0).unwrap();
+        graph.connect(a, 0, c, 0).unwrap();
+        graph.connect(b, 0, d, 0).unwrap();
+        graph.connect(b, 0, e, 0).unwrap();
+        graph.connect(c, 0, e, 1).unwrap();
+        graph.connect(d, 0, f, 0).unwrap();
+        graph.connect(e, 0, f, 1).unwrap();
+
+        graph.compile().unwrap();
+
+        ≔ processor = graph.create_processor().unwrap();
+        ≔ order = processor.processing_order();
+
+        // Verify all ordering constraints
+        ≔ positions: HashMap<NodeId, usize> = order
+            .iter()
+            .enumerate()
+            .map(|(i, &n)| (n, i))
+            .collect();
+
+        assert!(positions[&a] < positions[&b]);
+        assert!(positions[&a] < positions[&c]);
+        assert!(positions[&b] < positions[&d]);
+        assert!(positions[&b] < positions[&e]);
+        assert!(positions[&c] < positions[&e]);
+        assert!(positions[&d] < positions[&f]);
+        assert!(positions[&e] < positions[&f]);
+    }
+
+    //@ rune: test
+    rite test_topological_sort_disconnected_nodes() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        // Three disconnected nodes
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+        ≔ c = graph.add_node(GainNode·new(1.0));
+
+        graph.compile().unwrap();
+
+        ≔ processor = graph.create_processor().unwrap();
+        ≔ order = processor.processing_order();
+
+        // All nodes should be ∈ the order
+        assert_eq!(order.len(), 3);
+        assert!(order.contains(&a));
+        assert!(order.contains(&b));
+        assert!(order.contains(&c));
+    }
+
+    // -------------------------------------------------------------------------
+    // Cycle Detection Tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_cycle_detection_self_loop() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+
+        // Self-loop: a -> a
+        ≔ result = graph.connect(a, 0, a, 0);
+        assert!(
+            matches!(result, Err(Error·CycleDetected)),
+            "Self-loop should be rejected"
+        );
+    }
+
+    //@ rune: test
+    rite test_cycle_detection_two_node_cycle() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+
+        graph.connect(a, 0, b, 0).unwrap();
+
+        // Would create: a -> b -> a
+        ≔ result = graph.connect(b, 0, a, 0);
+        assert!(
+            matches!(result, Err(Error·CycleDetected)),
+            "Two-node cycle should be rejected"
+        );
+    }
+
+    //@ rune: test
+    rite test_cycle_detection_indirect_cycle() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+        ≔ c = graph.add_node(GainNode·new(1.0));
+        ≔ d = graph.add_node(GainNode·new(1.0));
+
+        graph.connect(a, 0, b, 0).unwrap();
+        graph.connect(b, 0, c, 0).unwrap();
+        graph.connect(c, 0, d, 0).unwrap();
+
+        // Would create cycle through 4 nodes
+        ≔ result = graph.connect(d, 0, a, 0);
+        assert!(
+            matches!(result, Err(Error·CycleDetected)),
+            "Indirect cycle should be rejected"
+        );
+    }
+
+    //@ rune: test
+    rite test_valid_diamond_is_not_cycle() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+        ≔ c = graph.add_node(GainNode·new(1.0));
+        ≔ d = graph.add_node(MixerNode·new(2));
+
+        // Diamond pattern is valid (not a cycle)
+        graph.connect(a, 0, b, 0).unwrap();
+        graph.connect(a, 0, c, 0).unwrap();
+        graph.connect(b, 0, d, 0).unwrap();
+        graph.connect(c, 0, d, 1).unwrap();
+
+        // Should compile successfully
+        assert!(graph.compile().is_ok());
+    }
+
+    // -------------------------------------------------------------------------
+    // Connection Management Tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_duplicate_connection_rejected() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+
+        graph.connect(a, 0, b, 0).unwrap();
+
+        ≔ result = graph.connect(a, 0, b, 0);
+        assert!(
+            matches!(result, Err(Error·DuplicateConnection)),
+            "Duplicate connection should be rejected"
+        );
+    }
+
+    //@ rune: test
+    rite test_invalid_source_port_rejected() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+
+        // GainNode has only 1 output (port 0)
+        ≔ result = graph.connect(a, 99, b, 0);
+        assert!(
+            matches!(result, Err(Error·PortNotFound { .. })),
+            "Invalid source port should be rejected"
+        );
+    }
+
+    //@ rune: test
+    rite test_invalid_dest_port_rejected() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+
+        // GainNode has only 1 input (port 0)
+        ≔ result = graph.connect(a, 0, b, 99);
+        assert!(
+            matches!(result, Err(Error·PortNotFound { .. })),
+            "Invalid dest port should be rejected"
+        );
+    }
+
+    //@ rune: test
+    rite test_connect_to_nonexistent_node() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+
+        // Remove b, then try to connect to it
+        graph.remove_node(b).unwrap();
+
+        ≔ result = graph.connect(a, 0, b, 0);
+        assert!(
+            matches!(result, Err(Error·NodeNotFound(_))),
+            "Connection to removed node should fail"
+        );
+    }
+
+    //@ rune: test
+    rite test_disconnect() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+
+        graph.connect(a, 0, b, 0).unwrap();
+        assert_eq!(graph.connection_count(), 1);
+
+        graph.disconnect(a, 0, b, 0).unwrap();
+        assert_eq!(graph.connection_count(), 0);
+    }
+
+    //@ rune: test
+    rite test_remove_node_cleans_connections() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+        ≔ c = graph.add_node(GainNode·new(1.0));
+
+        graph.connect(a, 0, b, 0).unwrap();
+        graph.connect(b, 0, c, 0).unwrap();
+        assert_eq!(graph.connection_count(), 2);
+
+        // Remove middle node - should remove both connections
+        graph.remove_node(b).unwrap();
+        assert_eq!(graph.connection_count(), 0);
+        assert_eq!(graph.node_count(), 2);
+    }
+
+    // -------------------------------------------------------------------------
+    // Dirty Flag and Compilation Tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_graph_dirty_on_add_node() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        assert!(graph.is_dirty(), "New graph should be dirty");
+
+        graph.compile().unwrap();
+        assert!(!graph.is_dirty(), "Compiled graph should not be dirty");
+
+        graph.add_node(GainNode·new(1.0));
+        assert!(graph.is_dirty(), "Graph should be dirty after adding node");
+    }
+
+    //@ rune: test
+    rite test_graph_dirty_on_remove_node() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        graph.compile().unwrap();
+        assert!(!graph.is_dirty());
+
+        graph.remove_node(a).unwrap();
+        assert!(graph.is_dirty(), "Graph should be dirty after removing node");
+    }
+
+    //@ rune: test
+    rite test_graph_dirty_on_connect() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+        graph.compile().unwrap();
+
+        graph.connect(a, 0, b, 0).unwrap();
+        assert!(graph.is_dirty(), "Graph should be dirty after connecting");
+    }
+
+    //@ rune: test
+    rite test_graph_dirty_on_disconnect() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+        graph.connect(a, 0, b, 0).unwrap();
+        graph.compile().unwrap();
+
+        graph.disconnect(a, 0, b, 0).unwrap();
+        assert!(
+            graph.is_dirty(),
+            "Graph should be dirty after disconnecting"
+        );
+    }
+
+    //@ rune: test
+    rite test_processor_requires_compilation() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+        graph.connect(a, 0, b, 0).unwrap();
+
+        // Without compile
+        ≔ result = graph.create_processor();
+        assert!(
+            matches!(result, Err(Error·NotCompiled)),
+            "Processor creation should fail without compilation"
+        );
+
+        // After compile
+        graph.compile().unwrap();
+        assert!(
+            graph.create_processor().is_ok(),
+            "Processor creation should succeed after compilation"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Node Access Tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_get_node() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ id = graph.add_node(GainNode·new(0.5));
+
+        ≔ node = graph.get_node(id).unwrap();
+        assert_eq!(node.name(), "Gain");
+    }
+
+    //@ rune: test
+    rite test_get_node_mut() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ id = graph.add_node(GainNode·new(0.5));
+
+        ≔ _node = graph.get_node_mut(id).unwrap();
+        // Node is mutable - can modify parameters
+    }
+
+    //@ rune: test
+    rite test_get_removed_node_fails() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ id = graph.add_node(GainNode·new(0.5));
+        graph.remove_node(id).unwrap();
+
+        assert!(matches!(graph.get_node(id), Err(Error·NodeNotFound(_))));
+    }
+
+    // -------------------------------------------------------------------------
+    // Graph Properties Tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_sample_rate() {
+        ≔ graph = AudioGraph·new(44100.0, 256);
+        assert!((graph.sample_rate() - 44100.0).abs() < 0.01);
+    }
+
+    //@ rune: test
+    rite test_buffer_size() {
+        ≔ graph = AudioGraph·new(48000.0, 512);
+        assert_eq!(graph.buffer_size(), 512);
+    }
+
+    //@ rune: test
+    rite test_node_count() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        assert_eq!(graph.node_count(), 0);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        assert_eq!(graph.node_count(), 1);
+
+        graph.add_node(GainNode·new(1.0));
+        assert_eq!(graph.node_count(), 2);
+
+        graph.remove_node(a).unwrap();
+        assert_eq!(graph.node_count(), 1);
+    }
+
+    //@ rune: test
+    rite test_connection_count() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ a = graph.add_node(GainNode·new(1.0));
+        ≔ b = graph.add_node(GainNode·new(1.0));
+        ≔ c = graph.add_node(GainNode·new(1.0));
+
+        assert_eq!(graph.connection_count(), 0);
+
+        graph.connect(a, 0, b, 0).unwrap();
+        assert_eq!(graph.connection_count(), 1);
+
+        graph.connect(b, 0, c, 0).unwrap();
+        assert_eq!(graph.connection_count(), 2);
+
+        graph.disconnect(a, 0, b, 0).unwrap();
+        assert_eq!(graph.connection_count(), 1);
+    }
+
+    // -------------------------------------------------------------------------
+    // I/O Node Tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_input_output_pipeline() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ input = graph.add_node(InputNode·new(2));
+        ≔ gain = graph.add_node(GainNode·new(0.5));
+        ≔ output = graph.add_node(OutputNode·new(2));
+
+        graph.connect(input, 0, gain, 0).unwrap();
+        graph.connect(gain, 0, output, 0).unwrap();
+
+        graph.compile().unwrap();
+
+        ≔ processor = graph.create_processor().unwrap();
+        ≔ order = processor.processing_order();
+
+        // Input should come first, output last
+        ≔ pos_input = order.iter().position(|&n| n == input).unwrap();
+        ≔ pos_gain = order.iter().position(|&n| n == gain).unwrap();
+        ≔ pos_output = order.iter().position(|&n| n == output).unwrap();
+
+        assert!(pos_input < pos_gain);
+        assert!(pos_gain < pos_output);
+    }
+
+    // -------------------------------------------------------------------------
+    // Mixer Node Graph Tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_mixer_multi_input_graph() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+
+        ≔ input1 = graph.add_node(InputNode·new(2));
+        ≔ input2 = graph.add_node(InputNode·new(2));
+        ≔ input3 = graph.add_node(InputNode·new(2));
+        ≔ mixer = graph.add_node(MixerNode·new(3));
+        ≔ output = graph.add_node(OutputNode·new(2));
+
+        graph.connect(input1, 0, mixer, 0).unwrap();
+        graph.connect(input2, 0, mixer, 1).unwrap();
+        graph.connect(input3, 0, mixer, 2).unwrap();
+        graph.connect(mixer, 0, output, 0).unwrap();
+
+        graph.compile().unwrap();
+
+        ≔ processor = graph.create_processor().unwrap();
+
+        // Verify mixer receives from all inputs
+        ≔ mixer_inputs: Vec<_> = processor.inputs_for(mixer).collect();
+        assert_eq!(mixer_inputs.len(), 3);
+    }
+
+    // -------------------------------------------------------------------------
+    // Empty Graph Tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_empty_graph_compiles() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+        assert!(graph.compile().is_ok());
+    }
+
+    //@ rune: test
+    rite test_empty_graph_processor() {
+        ≔ Δ graph = AudioGraph·new(48000.0, 512);
+        graph.compile().unwrap();
+
+        ≔ processor = graph.create_processor().unwrap();
+        assert_eq!(processor.processing_order().len(), 0);
+        assert_eq!(processor.connections().len(), 0);
+    }
+}

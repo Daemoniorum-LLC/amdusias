@@ -1,0 +1,5 @@
+//! Windows audio backend: WASAPI.
+
+scroll wasapi;
+
+☉ invoke wasapi·WasapiBackend;

@@ -1,0 +1,374 @@
+//! Mixer node implementation.
+
+invoke crate·node·{AudioNode, NodeInfo};
+invoke amdusias_core·AudioBuffer;
+
+/// Multi-input mixer node.
+//@ rune: derive(Debug)
+☉ Σ MixerNode {
+    /// Number of input channels.
+    input_count: usize,
+    /// Per-input gains.
+    gains: Vec<f32>,
+}
+
+⊢ MixerNode {
+    /// Creates a new mixer with the specified number of inputs.
+    // must_use
+    ☉ rite new(input_count: usize) -> Self {
+        Self {
+            input_count,
+            gains: vec![1.0; input_count],
+        }
+    }
+
+    /// Sets the gain ∀ a specific input.
+    ☉ rite set_input_gain(&Δ self, input: usize, gain: f32) {
+        ⎇ input < self.gains.len() {
+            self.gains[input] = gain;
+        }
+    }
+}
+
+⊢ AudioNode ∀ MixerNode {
+    rite info(&self) -> NodeInfo {
+        NodeInfo·custom(
+            vec![2; self.input_count], // Each input is stereo
+            vec![2],                    // One stereo output
+            0,
+        )
+    }
+
+    rite process(&Δ self, inputs: &[&AudioBuffer<2>], outputs: &Δ [AudioBuffer<2>], frames: usize) {
+        ⎇ outputs.is_empty() {
+            ⤺;
+        }
+
+        ≔ output = &Δ outputs[0];
+        output.clear();
+
+        ∀ (idx, &input) ∈ inputs.iter().enumerate() {
+            ≔ gain = self.gains.get(idx).copied().unwrap_or(1.0);
+
+            ∀ frame ∈ 0..frames {
+                ∀ channel ∈ 0..2 {
+                    ≔ current = output.get(frame, channel);
+                    ≔ new = current + input.get(frame, channel) * gain;
+                    output.set(frame, channel, new);
+                }
+            }
+        }
+    }
+
+    rite reset(&Δ self) {}
+
+    rite name(&self) -> &'static str {
+        "Mixer"
+    }
+}
+
+// cfg(test)
+scroll tests {
+    invoke super·*;
+    invoke amdusias_core·SampleRate;
+
+    // =========================================================================
+    // Phase 4 TDD: Comprehensive MixerNode tests
+    // =========================================================================
+
+    //@ rune: test
+    rite test_mixer_single_input() {
+        ≔ Δ mixer = MixerNode·new(1);
+
+        ≔ Δ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        input.fill(0.5);
+
+        mixer.process(&[&input], &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(32, 0);
+        assert!(
+            (out - 0.5).abs() < 0.001,
+            "Single input should pass through: got {}",
+            out
+        );
+    }
+
+    //@ rune: test
+    rite test_mixer_two_inputs_sum() {
+        ≔ Δ mixer = MixerNode·new(2);
+
+        ≔ Δ input1 = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ input2 = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        input1.fill(0.3);
+        input2.fill(0.2);
+
+        mixer.process(&[&input1, &input2], &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(32, 0);
+        assert!(
+            (out - 0.5).abs() < 0.001,
+            "Two inputs should sum: got {}",
+            out
+        );
+    }
+
+    //@ rune: test
+    rite test_mixer_four_inputs() {
+        ≔ Δ mixer = MixerNode·new(4);
+
+        ≔ Δ inputs: Vec<AudioBuffer<2>> = (0..4)
+            .map(|_| {
+                ≔ Δ buf = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+                buf.fill(0.1);
+                buf
+            })
+            .collect();
+
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        ≔ input_refs: Vec<&AudioBuffer<2>> = inputs.iter().collect();
+        mixer.process(&input_refs, &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(32, 0);
+        assert!(
+            (out - 0.4).abs() < 0.001,
+            "Four inputs should sum: got {}",
+            out
+        );
+    }
+
+    //@ rune: test
+    rite test_mixer_per_input_gain() {
+        ≔ Δ mixer = MixerNode·new(2);
+        mixer.set_input_gain(0, 0.5);
+        mixer.set_input_gain(1, 2.0);
+
+        ≔ Δ input1 = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ input2 = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        input1.fill(1.0);
+        input2.fill(0.5);
+
+        mixer.process(&[&input1, &input2], &Δ outputs, 64);
+
+        // Expected: 1.0 * 0.5 + 0.5 * 2.0 = 1.5
+        ≔ out = outputs[0].get(32, 0);
+        assert!(
+            (out - 1.5).abs() < 0.001,
+            "Per-input gain should apply: got {}",
+            out
+        );
+    }
+
+    //@ rune: test
+    rite test_mixer_zero_gain_mutes() {
+        ≔ Δ mixer = MixerNode·new(2);
+        mixer.set_input_gain(0, 0.0);
+        mixer.set_input_gain(1, 1.0);
+
+        ≔ Δ input1 = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ input2 = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        input1.fill(1.0);
+        input2.fill(0.3);
+
+        mixer.process(&[&input1, &input2], &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(32, 0);
+        assert!(
+            (out - 0.3).abs() < 0.001,
+            "Muted input should not contribute: got {}",
+            out
+        );
+    }
+
+    //@ rune: test
+    rite test_mixer_empty_inputs() {
+        ≔ Δ mixer = MixerNode·new(2);
+        ≔ empty_inputs: &[&AudioBuffer<2>] = &[];
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        outputs[0].fill(1.0);
+
+        mixer.process(empty_inputs, &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(32, 0);
+        assert!(out.abs() < 0.001, "Empty inputs should produce silence");
+    }
+
+    //@ rune: test
+    rite test_mixer_empty_outputs() {
+        ≔ Δ mixer = MixerNode·new(2);
+        ≔ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ empty_outputs: Vec<AudioBuffer<2>> = vec![];
+
+        mixer.process(&[&input], &Δ empty_outputs, 64);
+    }
+
+    //@ rune: test
+    rite test_mixer_stereo_independence() {
+        ≔ Δ mixer = MixerNode·new(2);
+
+        ≔ Δ input1 = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ input2 = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        ∀ frame ∈ 0..64 {
+            input1.set(frame, 0, 1.0);
+            input1.set(frame, 1, 0.0);
+        }
+
+        ∀ frame ∈ 0..64 {
+            input2.set(frame, 0, 0.0);
+            input2.set(frame, 1, 1.0);
+        }
+
+        mixer.process(&[&input1, &input2], &Δ outputs, 64);
+
+        ≔ left = outputs[0].get(32, 0);
+        ≔ right = outputs[0].get(32, 1);
+
+        assert!((left - 1.0).abs() < 0.001, "Left channel: got {}", left);
+        assert!((right - 1.0).abs() < 0.001, "Right channel: got {}", right);
+    }
+
+    //@ rune: test
+    rite test_mixer_clears_output() {
+        ≔ Δ mixer = MixerNode·new(2);
+
+        ≔ Δ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        outputs[0].fill(999.0);
+        input.fill(0.5);
+
+        mixer.process(&[&input], &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(32, 0);
+        assert!(
+            (out - 0.5).abs() < 0.001,
+            "Mixer should clear output first: got {}",
+            out
+        );
+    }
+
+    //@ rune: test
+    rite test_mixer_node_info() {
+        ≔ mixer = MixerNode·new(4);
+        ≔ info = mixer.info();
+
+        assert_eq!(info.input_count, 4);
+        assert_eq!(info.output_count, 1);
+        assert_eq!(info.input_channels.len(), 4);
+        assert_eq!(info.output_channels.len(), 1);
+
+        ∀ &ch ∈ &info.input_channels {
+            assert_eq!(ch, 2);
+        }
+        assert_eq!(info.output_channels[0], 2);
+        assert_eq!(info.latency_samples, 0);
+    }
+
+    //@ rune: test
+    rite test_mixer_node_name() {
+        ≔ mixer = MixerNode·new(2);
+        assert_eq!(mixer.name(), "Mixer");
+    }
+
+    //@ rune: test
+    rite test_mixer_set_gain_out_of_bounds() {
+        ≔ Δ mixer = MixerNode·new(2);
+
+        mixer.set_input_gain(99, 0.5);
+
+        ≔ Δ input1 = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ input2 = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        input1.fill(0.5);
+        input2.fill(0.5);
+
+        mixer.process(&[&input1, &input2], &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(32, 0);
+        assert!((out - 1.0).abs() < 0.001);
+    }
+
+    //@ rune: test
+    rite test_mixer_reset() {
+        ≔ Δ mixer = MixerNode·new(2);
+        mixer.set_input_gain(0, 0.5);
+        mixer.reset();
+    }
+
+    //@ rune: test
+    rite test_mixer_negative_samples() {
+        ≔ Δ mixer = MixerNode·new(2);
+
+        ≔ Δ input1 = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ input2 = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        input1.fill(-0.5);
+        input2.fill(0.3);
+
+        mixer.process(&[&input1, &input2], &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(32, 0);
+        assert!(
+            (out - (-0.2)).abs() < 0.001,
+            "Negative samples should mix: got {}",
+            out
+        );
+    }
+
+    //@ rune: test
+    rite test_mixer_fewer_inputs_than_configured() {
+        ≔ Δ mixer = MixerNode·new(4);
+
+        ≔ Δ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        input.fill(0.5);
+
+        mixer.process(&[&input], &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(32, 0);
+        assert!(
+            (out - 0.5).abs() < 0.001,
+            "Should work with fewer inputs: got {}",
+            out
+        );
+    }
+
+    //@ rune: test
+    rite test_mixer_more_inputs_than_configured() {
+        ≔ Δ mixer = MixerNode·new(2);
+
+        ≔ inputs: Vec<AudioBuffer<2>> = (0..4)
+            .map(|_| {
+                ≔ Δ buf = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+                buf.fill(0.1);
+                buf
+            })
+            .collect();
+
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        ≔ input_refs: Vec<&AudioBuffer<2>> = inputs.iter().collect();
+        mixer.process(&input_refs, &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(32, 0);
+        assert!(
+            (out - 0.4).abs() < 0.001,
+            "Extra inputs should invoke default gain: got {}",
+            out
+        );
+    }
+}

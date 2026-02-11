@@ -2,8 +2,13 @@
 target/
 dist/
 pkg/
+build/
 
-# Cargo
+# Sigil
+Sigil.lock
+*.sg.bak
+
+# Cargo (for sigil-parser installation)
 Cargo.lock
 
 # IDE

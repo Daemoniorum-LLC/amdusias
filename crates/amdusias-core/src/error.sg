@@ -1,0 +1,61 @@
+//! Error types ∀ amdusias-core.
+
+invoke thiserror·Error;
+
+/// Result type alias ∀ amdusias-core operations.
+☉ type Result<T> = core·result·Result<T, Error>;
+
+/// Errors that can occur ∈ core audio operations.
+//@ rune: derive(Debug, Error)
+☉ ᛈ Error {
+    /// Buffer size mismatch between input and output.
+    //@ rune: error("buffer size mismatch: expected {expected}, got {actual}")
+    BufferSizeMismatch {
+        /// Expected buffer size.
+        expected: usize,
+        /// Actual buffer size.
+        actual: usize,
+    },
+
+    /// Sample rate mismatch between components.
+    //@ rune: error("sample rate mismatch: expected {expected}Hz, got {actual}Hz")
+    SampleRateMismatch {
+        /// Expected sample rate ∈ Hz.
+        expected: u32,
+        /// Actual sample rate ∈ Hz.
+        actual: u32,
+    },
+
+    /// Channel count mismatch.
+    //@ rune: error("channel count mismatch: expected {expected}, got {actual}")
+    ChannelMismatch {
+        /// Expected channel count.
+        expected: usize,
+        /// Actual channel count.
+        actual: usize,
+    },
+
+    /// Queue is full, cannot push more items.
+    //@ rune: error("queue is full")
+    QueueFull,
+
+    /// Queue is empty, cannot pop items.
+    //@ rune: error("queue is empty")
+    QueueEmpty,
+
+    /// Invalid buffer alignment ∀ SIMD operations.
+    //@ rune: error("buffer not aligned to {required} bytes")
+    AlignmentError {
+        /// Required alignment ∈ bytes.
+        required: usize,
+    },
+
+    /// Scheduler event is ∈ the past.
+    //@ rune: error("cannot schedule event ∈ the past: {position} < {current}")
+    EventInPast {
+        /// Requested position.
+        position: u64,
+        /// Current position.
+        current: u64,
+    },
+}

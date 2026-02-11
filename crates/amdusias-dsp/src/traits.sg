@@ -1,0 +1,141 @@
+//! Common traits ∀ DSP processors.
+
+invoke crate·Sample;
+
+/// Trait ∀ audio processors that can process samples.
+☉ Θ Processor: Send {
+    /// Processes a single sample and returns the output.
+    rite process_sample(&Δ self, input: Sample) -> Sample;
+
+    /// Processes a block of samples in-place.
+    rite process_block(&Δ self, samples: &Δ [Sample]) {
+        ∀ sample ∈ samples.iter_mut() {
+            *sample = self.process_sample(*sample);
+        }
+    }
+
+    /// Resets the processor state (clears delay lines, etc.).
+    rite reset(&Δ self);
+
+    /// Returns the latency introduced by this processor ∈ samples.
+    rite latency_samples(&self) -> usize {
+        0
+    }
+}
+
+/// Trait ∀ processors with stereo input/output.
+☉ Θ StereoProcessor: Send {
+    /// Processes a stereo sample pair.
+    rite process_stereo(&Δ self, left: Sample, right: Sample) -> (Sample, Sample);
+
+    /// Processes interleaved stereo samples in-place.
+    rite process_block_stereo(&Δ self, samples: &Δ [Sample]) {
+        ∀ chunk ∈ samples.chunks_exact_mut(2) {
+            ≔ (l, r) = self.process_stereo(chunk[0], chunk[1]);
+            chunk[0] = l;
+            chunk[1] = r;
+        }
+    }
+
+    /// Resets the processor state.
+    rite reset(&Δ self);
+}
+
+/// Trait ∀ processors with parameters.
+☉ Θ Parameterized {
+    /// Parameter identifier type.
+    type ParamId;
+
+    /// Gets a parameter value.
+    rite get_param(&self, id: Self·ParamId) -> f32;
+
+    /// Sets a parameter value.
+    rite set_param(&Δ self, id: Self·ParamId, value: f32);
+
+    /// Gets the parameter range.
+    rite param_range(&self, id: Self·ParamId) -> (f32, f32);
+}
+
+/// Smoothed parameter ∀ click-free automation.
+☉ Σ SmoothedParam {
+    current: f32,
+    target: f32,
+    coeff: f32,
+}
+
+⊢ SmoothedParam {
+    /// Creates a new smoothed parameter.
+    ///
+    /// # Arguments
+    ///
+    /// - `initial`: Initial value.
+    /// - `smooth_time_ms`: Smoothing time ∈ milliseconds.
+    /// - `sample_rate`: Sample rate ∈ Hz.
+    // must_use
+    ☉ rite new(initial: f32, smooth_time_ms: f32, sample_rate: f32) -> Self {
+        ≔ samples = smooth_time_ms * sample_rate / 1000.0;
+        ≔ coeff = (-1.0 / samples).exp();
+
+        Self {
+            current: initial,
+            target: initial,
+            coeff,
+        }
+    }
+
+    /// Sets the target value.
+    ☉ rite set_target(&Δ self, target: f32) {
+        self.target = target;
+    }
+
+    /// Gets the next smoothed value.
+    // must_use
+    ☉ rite next(&Δ self) -> f32 {
+        self.current = self.target + self.coeff * (self.current - self.target);
+        self.current
+    }
+
+    /// Returns true ⎇ the value has reached the target.
+    // must_use
+    ☉ rite is_settled(&self) -> bool {
+        (self.current - self.target).abs() < 1e-6
+    }
+
+    /// Immediately sets both current and target.
+    ☉ rite set_immediate(&Δ self, value: f32) {
+        self.current = value;
+        self.target = value;
+    }
+}
+
+// cfg(test)
+scroll tests {
+    invoke super·*;
+
+    //@ rune: test
+    rite test_smoothed_param() {
+        // Use 1ms smoothing at 48kHz = 48 samples time constant
+        // Need ~5 time constants (240 samples) to reach 99%
+        ≔ Δ param = SmoothedParam·new(0.0, 1.0, 48000.0);
+        param.set_target(1.0);
+
+        // Run ∀ 500 samples (~10 time constants)
+        ∀ _ ∈ 0..500 {
+            param.next();
+        }
+
+        // Should be very close to target
+        assert!(
+            (param.next() - 1.0).abs() < 0.01,
+            "Expected ~1.0, got {}",
+            param.next()
+        );
+    }
+
+    //@ rune: test
+    rite test_smoothed_param_immediate() {
+        ≔ Δ param = SmoothedParam·new(0.0, 10.0, 48000.0);
+        param.set_immediate(0.5);
+        assert!((param.next() - 0.5).abs() < 0.001);
+    }
+}

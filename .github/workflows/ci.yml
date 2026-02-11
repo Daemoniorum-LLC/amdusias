@@ -2,15 +2,72 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, develop]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, develop]
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: -D warnings
 
 jobs:
+  check:
+    name: Type Check
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-sigil-${{ hashFiles('**/Sigil.toml') }}
+
+      - name: Install Sigil compiler
+        run: cargo install sigil-parser
+
+      - name: Type check
+        run: sigil check .
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Sigil compiler
+        run: cargo install sigil-parser
+
+      - name: Run linter
+        run: sigil lint .
+
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Sigil compiler
+        run: cargo install sigil-parser
+
+      - name: Check formatting
+        run: sigil fmt --check .
+
   test:
     name: Test
     runs-on: ${{ matrix.os }}
@@ -35,59 +92,53 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-sigil-${{ hashFiles('**/Sigil.toml') }}
+
+      - name: Install Sigil compiler
+        run: cargo install sigil-parser
 
       - name: Run tests
-        run: cargo test --workspace
+        run: sigil test
 
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
+  build:
+    name: Build Native
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install LLVM (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-18-dev libpolly-18-dev libzstd-dev clang-18 libasound2-dev libpipewire-0.3-dev
+
+      - name: Install LLVM (macOS)
+        if: runner.os == 'macOS'
+        run: brew install llvm@18
+
+      - name: Cache cargo
+        uses: actions/cache@v4
         with:
-          components: clippy
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-sigil-llvm-${{ hashFiles('**/Sigil.toml') }}
 
-      - name: Install ALSA dev
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libpipewire-0.3-dev
-
-      - name: Run clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-  docs:
-    name: Docs
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install ALSA dev
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libpipewire-0.3-dev
-
-      - name: Build docs
-        run: cargo doc --workspace --no-deps
+      - name: Install Sigil compiler (with LLVM)
+        run: cargo install sigil-parser --features llvm
         env:
-          RUSTDOCFLAGS: -D warnings
+          CC: ${{ runner.os == 'Linux' && 'clang-18' || 'clang' }}
+
+      - name: Build native binary
+        run: sigil build --release
 
   wasm:
     name: WebAssembly
@@ -100,8 +151,8 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Install Sigil compiler
+        run: cargo install sigil-parser
 
       - name: Build WASM
-        run: wasm-pack build crates/amdusias-web --target web
+        run: sigil build --target wasm

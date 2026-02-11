@@ -1,0 +1,124 @@
+//! Message types ∀ communication between main thread and AudioWorklet.
+
+invoke serde·{Deserialize, Serialize};
+
+/// Message type identifier.
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)
+☉ ᛈ MessageType {
+    /// Parameter change.
+    Param,
+    /// Note on event.
+    NoteOn,
+    /// Note off event.
+    NoteOff,
+    /// All notes off.
+    AllNotesOff,
+    /// Transport command (play/pause/stop).
+    Transport,
+    /// Meter data (from processor to main thread).
+    Meter,
+    /// Error message.
+    Error,
+}
+
+/// A message sent between main thread and AudioWorklet.
+//@ rune: derive(Debug, Clone, Serialize, Deserialize)
+☉ Σ Message {
+    /// Message type.
+    ☉ msg_type: MessageType,
+    /// Parameter ID (∀ Param messages).
+    ☉ param_id: Option<u32>,
+    /// Value (∀ Param messages).
+    ☉ value: Option<f32>,
+    /// MIDI note number (∀ NoteOn/NoteOff).
+    ☉ note: Option<u8>,
+    /// MIDI velocity (∀ NoteOn).
+    ☉ velocity: Option<u8>,
+    /// Error message text.
+    ☉ error: Option<String>,
+}
+
+⊢ Message {
+    /// Creates a parameter change message.
+    // must_use
+    ☉ rite param(param_id: u32, value: f32) -> Self {
+        Self {
+            msg_type: MessageType·Param,
+            param_id: Some(param_id),
+            value: Some(value),
+            note: None,
+            velocity: None,
+            error: None,
+        }
+    }
+
+    /// Creates a note on message.
+    // must_use
+    ☉ rite note_on(note: u8, velocity: u8) -> Self {
+        Self {
+            msg_type: MessageType·NoteOn,
+            param_id: None,
+            value: None,
+            note: Some(note),
+            velocity: Some(velocity),
+            error: None,
+        }
+    }
+
+    /// Creates a note off message.
+    // must_use
+    ☉ rite note_off(note: u8) -> Self {
+        Self {
+            msg_type: MessageType·NoteOff,
+            param_id: None,
+            value: None,
+            note: Some(note),
+            velocity: None,
+            error: None,
+        }
+    }
+
+    /// Creates an all notes off message.
+    // must_use
+    ☉ rite all_notes_off() -> Self {
+        Self {
+            msg_type: MessageType·AllNotesOff,
+            param_id: None,
+            value: None,
+            note: None,
+            velocity: None,
+            error: None,
+        }
+    }
+
+    /// Creates an error message.
+    // must_use
+    ☉ rite error(message: ⊢ Into<String>) -> Self {
+        Self {
+            msg_type: MessageType·Error,
+            param_id: None,
+            value: None,
+            note: None,
+            velocity: None,
+            error: Some(message.into()),
+        }
+    }
+}
+
+/// Well-known parameter IDs.
+☉ scroll params {
+    /// Master gain ∈ dB.
+    ☉ const MASTER_GAIN: u32 = 0;
+    /// Reverb mix (0-1).
+    ☉ const REVERB_MIX: u32 = 1;
+    /// Reverb room size (0-1).
+    ☉ const REVERB_SIZE: u32 = 2;
+    /// Compressor threshold ∈ dB.
+    ☉ const COMP_THRESHOLD: u32 = 10;
+    /// Compressor ratio.
+    ☉ const COMP_RATIO: u32 = 11;
+    /// Compressor attack ∈ ms.
+    ☉ const COMP_ATTACK: u32 = 12;
+    /// Compressor release ∈ ms.
+    ☉ const COMP_RELEASE: u32 = 13;
+}

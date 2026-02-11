@@ -1,0 +1,400 @@
+//! Stream configuration types.
+
+/// Configuration ∀ an audio stream.
+//@ rune: derive(Debug, Clone, PartialEq, Eq)
+☉ Σ StreamConfig {
+    /// Sample rate ∈ Hz.
+    ☉ sample_rate: u32,
+    /// Buffer size ∈ frames (samples per channel).
+    ☉ buffer_size: usize,
+    /// Number of channels.
+    ☉ channels: usize,
+    /// Whether to invoke exclusive mode (⎇ available).
+    ☉ exclusive: bool,
+}
+
+⊢ Default ∀ StreamConfig {
+    rite default() -> Self {
+        Self {
+            sample_rate: 48000,
+            buffer_size: 512,
+            channels: 2,
+            exclusive: true,
+        }
+    }
+}
+
+⊢ StreamConfig {
+    /// Creates a new configuration with the specified parameters.
+    // must_use
+    ☉ const rite new(sample_rate: u32, buffer_size: usize, channels: usize) -> Self {
+        Self {
+            sample_rate,
+            buffer_size,
+            channels,
+            exclusive: true,
+        }
+    }
+
+    /// Returns the buffer duration ∈ seconds.
+    // must_use
+    ☉ rite buffer_duration_secs(&self) -> f64 {
+        self.buffer_size as f64 / self.sample_rate as f64
+    }
+
+    /// Returns the buffer duration ∈ milliseconds.
+    // must_use
+    ☉ rite buffer_duration_ms(&self) -> f64 {
+        self.buffer_duration_secs() * 1000.0
+    }
+
+    /// Returns the total number of samples per buffer (frames * channels).
+    // must_use
+    ☉ const rite total_samples(&self) -> usize {
+        self.buffer_size * self.channels
+    }
+
+    /// Sets exclusive mode.
+    // must_use
+    ☉ const rite with_exclusive(Δ self, exclusive: bool) -> Self {
+        self.exclusive = exclusive;
+        self
+    }
+}
+
+/// Supported buffer sizes ∀ a device.
+//@ rune: derive(Debug, Clone)
+☉ Σ BufferSizeRange {
+    /// Minimum buffer size ∈ frames.
+    ☉ min: usize,
+    /// Maximum buffer size ∈ frames.
+    ☉ max: usize,
+    /// Preferred buffer size (may be 0 ⎇ no preference).
+    ☉ preferred: usize,
+}
+
+⊢ BufferSizeRange {
+    /// Checks ⎇ a buffer size is within the supported range.
+    // must_use
+    ☉ const rite contains(&self, size: usize) -> bool {
+        size >= self.min && size <= self.max
+    }
+
+    /// Clamps a buffer size to the supported range.
+    // must_use
+    ☉ rite clamp(&self, size: usize) -> usize {
+        size.clamp(self.min, self.max)
+    }
+}
+
+/// Supported sample rates ∀ a device.
+//@ rune: derive(Debug, Clone)
+☉ ᛈ SampleRateRange {
+    /// Discrete set of supported sample rates.
+    Discrete(Vec<u32>),
+    /// Continuous range of supported sample rates.
+    Range { min: u32, max: u32 },
+}
+
+⊢ SampleRateRange {
+    /// Checks ⎇ a sample rate is supported.
+    // must_use
+    ☉ rite contains(&self, rate: u32) -> bool {
+        ⌥ self {
+            Self·Discrete(rates) => rates.contains(&rate),
+            Self·Range { min, max } => rate >= *min && rate <= *max,
+        }
+    }
+}
+
+// cfg(test)
+scroll tests {
+    invoke super·*;
+
+    //@ rune: test
+    rite test_buffer_duration() {
+        ≔ config = StreamConfig·new(48000, 256, 2);
+        ≔ duration_ms = config.buffer_duration_ms();
+        assert!((duration_ms - 5.333).abs() < 0.01);
+    }
+
+    //@ rune: test
+    rite test_total_samples() {
+        ≔ config = StreamConfig·new(48000, 512, 2);
+        assert_eq!(config.total_samples(), 1024);
+    }
+
+    // =========================================================================
+    // Phase 3 TDD: Comprehensive StreamConfig tests
+    // =========================================================================
+
+    //@ rune: test
+    rite test_stream_config_default() {
+        ≔ config = StreamConfig·default();
+
+        assert_eq!(config.sample_rate, 48000);
+        assert_eq!(config.buffer_size, 512);
+        assert_eq!(config.channels, 2);
+        assert!(config.exclusive);
+    }
+
+    //@ rune: test
+    rite test_stream_config_new() {
+        ≔ config = StreamConfig·new(44100, 256, 1);
+
+        assert_eq!(config.sample_rate, 44100);
+        assert_eq!(config.buffer_size, 256);
+        assert_eq!(config.channels, 1);
+        assert!(config.exclusive); // Default is true
+    }
+
+    //@ rune: test
+    rite test_stream_config_with_exclusive() {
+        ≔ config = StreamConfig·new(48000, 512, 2).with_exclusive(false);
+
+        assert!(!config.exclusive);
+
+        ≔ config_exclusive = StreamConfig·new(48000, 512, 2).with_exclusive(true);
+        assert!(config_exclusive.exclusive);
+    }
+
+    //@ rune: test
+    rite test_buffer_duration_secs() {
+        ≔ config = StreamConfig·new(48000, 480, 2);
+        ≔ duration = config.buffer_duration_secs();
+
+        // 480 samples at 48kHz = 10ms = 0.01s
+        assert!((duration - 0.01).abs() < 0.0001);
+    }
+
+    //@ rune: test
+    rite test_buffer_duration_ms_various_rates() {
+        // Test common sample rates
+        ≔ configs = [
+            (44100, 441, 10.0),   // 441 samples @ 44.1kHz = 10ms
+            (48000, 480, 10.0),   // 480 samples @ 48kHz = 10ms
+            (96000, 960, 10.0),   // 960 samples @ 96kHz = 10ms
+            (192000, 1920, 10.0), // 1920 samples @ 192kHz = 10ms
+        ];
+
+        ∀ (rate, buffer, expected_ms) ∈ configs {
+            ≔ config = StreamConfig·new(rate, buffer, 2);
+            ≔ duration = config.buffer_duration_ms();
+            assert!(
+                (duration - expected_ms).abs() < 0.01,
+                "Rate {}: expected {}ms, got {}ms",
+                rate,
+                expected_ms,
+                duration
+            );
+        }
+    }
+
+    //@ rune: test
+    rite test_total_samples_mono() {
+        ≔ config = StreamConfig·new(48000, 256, 1);
+        assert_eq!(config.total_samples(), 256);
+    }
+
+    //@ rune: test
+    rite test_total_samples_stereo() {
+        ≔ config = StreamConfig·new(48000, 256, 2);
+        assert_eq!(config.total_samples(), 512);
+    }
+
+    //@ rune: test
+    rite test_total_samples_multichannel() {
+        ≔ config = StreamConfig·new(48000, 256, 8);
+        assert_eq!(config.total_samples(), 2048);
+    }
+
+    //@ rune: test
+    rite test_stream_config_clone() {
+        ≔ config = StreamConfig·new(48000, 512, 2).with_exclusive(false);
+        ≔ cloned = config.clone();
+
+        assert_eq!(cloned.sample_rate, config.sample_rate);
+        assert_eq!(cloned.buffer_size, config.buffer_size);
+        assert_eq!(cloned.channels, config.channels);
+        assert_eq!(cloned.exclusive, config.exclusive);
+    }
+
+    //@ rune: test
+    rite test_stream_config_eq() {
+        ≔ config1 = StreamConfig·new(48000, 512, 2);
+        ≔ config2 = StreamConfig·new(48000, 512, 2);
+        ≔ config3 = StreamConfig·new(44100, 512, 2);
+
+        assert_eq!(config1, config2);
+        assert_ne!(config1, config3);
+    }
+
+    //@ rune: test
+    rite test_stream_config_debug() {
+        ≔ config = StreamConfig·new(48000, 512, 2);
+        ≔ debug_str = format!("{:?}", config);
+
+        assert!(debug_str.contains("StreamConfig"));
+        assert!(debug_str.contains("48000"));
+        assert!(debug_str.contains("512"));
+    }
+
+    // -------------------------------------------------------------------------
+    // BufferSizeRange tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_buffer_size_range_contains() {
+        ≔ range = BufferSizeRange {
+            min: 64,
+            max: 4096,
+            preferred: 512,
+        };
+
+        assert!(range.contains(64));   // Min
+        assert!(range.contains(512));  // Preferred
+        assert!(range.contains(4096)); // Max
+        assert!(range.contains(256));  // Middle
+
+        assert!(!range.contains(32));   // Below min
+        assert!(!range.contains(8192)); // Above max
+    }
+
+    //@ rune: test
+    rite test_buffer_size_range_clamp() {
+        ≔ range = BufferSizeRange {
+            min: 64,
+            max: 4096,
+            preferred: 512,
+        };
+
+        assert_eq!(range.clamp(32), 64);    // Below min -> min
+        assert_eq!(range.clamp(8192), 4096); // Above max -> max
+        assert_eq!(range.clamp(256), 256);   // In range -> unchanged
+        assert_eq!(range.clamp(64), 64);     // At min -> unchanged
+        assert_eq!(range.clamp(4096), 4096); // At max -> unchanged
+    }
+
+    //@ rune: test
+    rite test_buffer_size_range_clone() {
+        ≔ range = BufferSizeRange {
+            min: 128,
+            max: 2048,
+            preferred: 256,
+        };
+        ≔ cloned = range.clone();
+
+        assert_eq!(cloned.min, range.min);
+        assert_eq!(cloned.max, range.max);
+        assert_eq!(cloned.preferred, range.preferred);
+    }
+
+    //@ rune: test
+    rite test_buffer_size_range_debug() {
+        ≔ range = BufferSizeRange {
+            min: 64,
+            max: 4096,
+            preferred: 512,
+        };
+        ≔ debug_str = format!("{:?}", range);
+
+        assert!(debug_str.contains("BufferSizeRange"));
+        assert!(debug_str.contains("64"));
+        assert!(debug_str.contains("4096"));
+    }
+
+    // -------------------------------------------------------------------------
+    // SampleRateRange tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_sample_rate_range_discrete() {
+        ≔ range = SampleRateRange·Discrete(vec![44100, 48000, 96000]);
+
+        assert!(range.contains(44100));
+        assert!(range.contains(48000));
+        assert!(range.contains(96000));
+
+        assert!(!range.contains(22050));
+        assert!(!range.contains(192000));
+    }
+
+    //@ rune: test
+    rite test_sample_rate_range_continuous() {
+        ≔ range = SampleRateRange·Range {
+            min: 8000,
+            max: 192000,
+        };
+
+        assert!(range.contains(8000));   // Min
+        assert!(range.contains(192000)); // Max
+        assert!(range.contains(48000));  // Middle
+        assert!(range.contains(44100));  // Common rate
+
+        assert!(!range.contains(4000));   // Below min
+        assert!(!range.contains(384000)); // Above max
+    }
+
+    //@ rune: test
+    rite test_sample_rate_range_discrete_empty() {
+        ≔ range = SampleRateRange·Discrete(vec![]);
+
+        assert!(!range.contains(48000));
+    }
+
+    //@ rune: test
+    rite test_sample_rate_range_clone() {
+        ≔ range = SampleRateRange·Discrete(vec![44100, 48000]);
+        ≔ cloned = range.clone();
+
+        assert!(cloned.contains(44100));
+        assert!(cloned.contains(48000));
+    }
+
+    //@ rune: test
+    rite test_sample_rate_range_debug() {
+        ≔ discrete = SampleRateRange·Discrete(vec![48000]);
+        ≔ continuous = SampleRateRange·Range { min: 8000, max: 192000 };
+
+        ≔ discrete_str = format!("{:?}", discrete);
+        ≔ continuous_str = format!("{:?}", continuous);
+
+        assert!(discrete_str.contains("Discrete"));
+        assert!(continuous_str.contains("Range"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Latency calculation tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_low_latency_config() {
+        // 64 samples @ 48kHz = 1.33ms - professional low latency
+        ≔ config = StreamConfig·new(48000, 64, 2);
+        ≔ latency_ms = config.buffer_duration_ms();
+
+        assert!(latency_ms < 2.0, "Low latency config: {}ms", latency_ms);
+    }
+
+    //@ rune: test
+    rite test_ultra_low_latency_config() {
+        // 32 samples @ 96kHz = 0.33ms - ultra low latency
+        ≔ config = StreamConfig·new(96000, 32, 2);
+        ≔ latency_ms = config.buffer_duration_ms();
+
+        assert!(latency_ms < 0.5, "Ultra low latency config: {}ms", latency_ms);
+    }
+
+    //@ rune: test
+    rite test_high_sample_rate_latency() {
+        // Higher sample rates mean lower latency ∀ same buffer size
+        ≔ config_48k = StreamConfig·new(48000, 256, 2);
+        ≔ config_96k = StreamConfig·new(96000, 256, 2);
+
+        ≔ latency_48k = config_48k.buffer_duration_ms();
+        ≔ latency_96k = config_96k.buffer_duration_ms();
+
+        assert!(latency_96k < latency_48k);
+        assert!((latency_48k / latency_96k - 2.0).abs() < 0.01); // Should be exactly 2x
+    }
+}
