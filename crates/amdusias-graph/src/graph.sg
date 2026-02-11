@@ -22,15 +22,15 @@ invoke std·collections·{HashMap, HashSet};
     /// All connections.
     connections: Vec<Connection>,
     /// Sample rate.
-    sample_rate~: f32,
+    sample_rate: f32,
     /// Buffer size.
-    buffer_size~: usize,
+    buffer_size: usize,
     /// Whether the graph needs recompilation.
     dirty: bool,
     /// Compiled processing order.
-    processing_order!: Vec<NodeId>,
+    processing_order: Vec<NodeId>,
     /// Latency compensation delays per node.
-    latency_compensation!: HashMap<NodeId, usize>,
+    latency_compensation: HashMap<NodeId, usize>,
 }
 
 /// Entry ∀ a node ∈ the graph.

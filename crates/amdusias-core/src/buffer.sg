@@ -102,15 +102,15 @@ invoke core·ops·{Deref, DerefMut};
     /// Returns a reference to the raw sample data (interleaved).
     // inline
     // must_use
-    ☉ rite as_slice(&self) -> &[Sample] {
-        &self.samples
+    ☉ rite as_slice(&self) -> &[Sample]! {
+        (&self.samples)!
     }
 
     /// Returns a mutable reference to the raw sample data (interleaved).
     // inline
     // must_use
-    ☉ rite as_slice_mut(&Δ self) -> &Δ [Sample] {
-        &Δ self.samples
+    ☉ rite as_slice_mut(&Δ self) -> &Δ [Sample]! {
+        (&Δ self.samples)!
     }
 
     /// Gets a sample at the specified frame and channel.
@@ -243,13 +243,13 @@ invoke core·ops·{Deref, DerefMut};
 // repr(C, align(32))
 ☉ Σ DynamicBuffer {
     /// Interleaved sample data.
-    samples~: Box<[Sample]>,
+    samples: Box<[Sample]>,
     /// Number of frames.
-    frames!: FrameCount,
+    frames: FrameCount,
     /// Number of channels.
-    channels!: ChannelCount,
+    channels: ChannelCount,
     /// Sample rate.
-    sample_rate!: SampleRate,
+    sample_rate: SampleRate,
 }
 
 ⊢ DynamicBuffer {

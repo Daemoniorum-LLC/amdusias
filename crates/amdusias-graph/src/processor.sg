@@ -15,13 +15,13 @@ invoke std·collections·HashMap;
 /// without any graph modification capabilities.
 ☉ Σ GraphProcessor {
     /// Processing order (topologically sorted).
-    processing_order!: Vec<NodeId>,
+    processing_order: Vec<NodeId>,
     /// Connections ∀ routing.
-    connections!: Vec<Connection>,
+    connections: Vec<Connection>,
     /// Buffer storage ∀ intermediate results.
     buffers: HashMap<(NodeId, usize), AudioBuffer<2>>,
     /// Buffer size.
-    buffer_size~: usize,
+    buffer_size: usize,
 }
 
 ⊢ GraphProcessor {
@@ -73,17 +73,17 @@ invoke std·collections·HashMap;
 /// Context passed to nodes during processing.
 ☉ Σ ProcessContext<'a> {
     /// Sample rate.
-    ☉ sample_rate~: f32,
+    ☉ sample_rate: f32,
     /// Buffer size.
-    ☉ buffer_size~: usize,
+    ☉ buffer_size: usize,
     /// Current transport position ∈ samples.
-    ☉ transport_position~: u64,
+    ☉ transport_position: u64,
     /// Whether transport is playing.
-    ☉ is_playing~: bool,
+    ☉ is_playing: bool,
     /// Tempo ∈ BPM (⎇ available).
-    ☉ tempo~: Option<f32>,
+    ☉ tempo: Option<f32>,
     /// Time signature (numerator, denominator).
-    ☉ time_signature~: Option<(u8, u8)>,
+    ☉ time_signature: Option<(u8, u8)>,
     /// Processor reference.
     processor: &'a GraphProcessor,
 }

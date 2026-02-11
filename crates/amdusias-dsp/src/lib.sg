@@ -153,37 +153,37 @@
 ///
 /// Returns frequencies associated with spiritual and healing traditions.
 // must_use
-☉ rite sacred_freq(name~: &str) -> f32?! {
-    ⌥ name {
-        "om" | "aum" => Some(136.1!),           // Om - cosmic vibration
-        "earth" => Some(7.83!),                  // Schumann resonance
-        "396" => Some(396.0!),                   // Solfeggio: Liberation
-        "417" => Some(417.0!),                   // Solfeggio: Change
-        "528" => Some(528.0!),                   // Solfeggio: DNA repair, "Love"
-        "639" => Some(639.0!),                   // Solfeggio: Connection
-        "741" => Some(741.0!),                   // Solfeggio: Expression
-        "852" => Some(852.0!),                   // Solfeggio: Intuition
-        "963" => Some(963.0!),                   // Solfeggio: Divine
-        "432" => Some(432.0!),                   // Verdi's A, "natural" tuning
+☉ rite sacred_freq(name~: &str) -> Option<f32>! {
+    (⌥ name {
+        "om" | "aum" => Some(136.1),           // Om - cosmic vibration
+        "earth" => Some(7.83),                  // Schumann resonance
+        "396" => Some(396.0),                   // Solfeggio: Liberation
+        "417" => Some(417.0),                   // Solfeggio: Change
+        "528" => Some(528.0),                   // Solfeggio: DNA repair, "Love"
+        "639" => Some(639.0),                   // Solfeggio: Connection
+        "741" => Some(741.0),                   // Solfeggio: Expression
+        "852" => Some(852.0),                   // Solfeggio: Intuition
+        "963" => Some(963.0),                   // Solfeggio: Divine
+        "432" => Some(432.0),                   // Verdi's A, "natural" tuning
         _ => None,
-    }
+    })!
 }
 
 /// Chakra frequency mapping.
 ///
 /// Returns the frequency traditionally associated with each chakra.
 // must_use
-☉ rite chakra_freq(chakra~: &str) -> f32?! {
-    ⌥ chakra {
-        "root" | "muladhara" => Some(396.0!),      // Base/root chakra
-        "sacral" | "svadhisthana" => Some(417.0!), // Sacral chakra
-        "solar" | "manipura" => Some(528.0!),      // Solar plexus
-        "heart" | "anahata" => Some(639.0!),       // Heart chakra
-        "throat" | "vishuddha" => Some(741.0!),    // Throat chakra
-        "third_eye" | "ajna" => Some(852.0!),      // Third eye
-        "crown" | "sahasrara" => Some(963.0!),     // Crown chakra
+☉ rite chakra_freq(chakra~: &str) -> Option<f32>! {
+    (⌥ chakra {
+        "root" | "muladhara" => Some(396.0),      // Base/root chakra
+        "sacral" | "svadhisthana" => Some(417.0), // Sacral chakra
+        "solar" | "manipura" => Some(528.0),      // Solar plexus
+        "heart" | "anahata" => Some(639.0),       // Heart chakra
+        "throat" | "vishuddha" => Some(741.0),    // Throat chakra
+        "third_eye" | "ajna" => Some(852.0),      // Third eye
+        "crown" | "sahasrara" => Some(963.0),     // Crown chakra
         _ => None,
-    }
+    })!
 }
 
 // cfg(test)

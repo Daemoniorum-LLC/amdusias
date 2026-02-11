@@ -11,13 +11,13 @@ invoke crate·NodeId;
 //@ rune: derive(Debug, Clone, Copy, PartialEq, Eq, Hash)
 ☉ Σ Connection {
     /// Source node.
-    ☉ source_node~: NodeId,
+    ☉ source_node: NodeId,
     /// Source port index.
-    ☉ source_port~: usize,
+    ☉ source_port: usize,
     /// Destination node.
-    ☉ dest_node~: NodeId,
+    ☉ dest_node: NodeId,
     /// Destination port index.
-    ☉ dest_port~: usize,
+    ☉ dest_port: usize,
 }
 
 ⊢ Connection {
@@ -40,8 +40,8 @@ invoke crate·NodeId;
 
 /// Builder ∀ creating connections.
 ☉ Σ ConnectionBuilder {
-    source_node~: NodeId,
-    source_port~: usize,
+    source_node: NodeId,
+    source_port: usize,
 }
 
 ⊢ ConnectionBuilder {
