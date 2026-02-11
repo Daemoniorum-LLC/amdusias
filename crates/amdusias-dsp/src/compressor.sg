@@ -80,9 +80,9 @@ invoke crate·{
 
     /// Calculates the gain reduction ∀ a given input level ∈ dB (pure computation).
     rite compute_gain_reduction(&self, input_db~: f32) -> f32! {
-        ≔ half_knee! = self.knee_db / 2.0;
-        ≔ knee_start! = self.threshold_db - half_knee;
-        ≔ knee_end! = self.threshold_db + half_knee;
+        ≔ half_knee = self.knee_db / 2.0;
+        ≔ knee_start = self.threshold_db - half_knee;
+        ≔ knee_end = self.threshold_db + half_knee;
 
         ⎇ input_db < knee_start {
             // Below knee: no compression
@@ -92,8 +92,8 @@ invoke crate·{
             (self.threshold_db + (input_db - self.threshold_db) / self.ratio - input_db)!
         } ⎉ {
             // In knee: smooth transition
-            ≔ x! = input_db - knee_start;
-            ≔ slope! = 1.0 / self.ratio - 1.0;
+            ≔ x = input_db - knee_start;
+            ≔ slope = 1.0 / self.ratio - 1.0;
             (slope * x * x / (2.0 * self.knee_db))!
         }
     }
@@ -103,15 +103,15 @@ invoke crate·{
     /// Process external audio sample, producing computed output.
     rite process_sample(&Δ self, input~: Sample) -> Sample! {
         // Get envelope level (computed from external input)
-        ≔ envelope_linear! = self.envelope.process(input);
-        ≔ envelope_db! = linear_to_db(envelope_linear);
+        ≔ envelope_linear = self.envelope.process(input);
+        ≔ envelope_db = linear_to_db(envelope_linear);
 
         // Calculate gain reduction (pure computation)
         self.gain_reduction_db = self.compute_gain_reduction(envelope_db);
 
         // Apply gain reduction + makeup (computed output)
-        ≔ total_gain_db! = self.gain_reduction_db + self.makeup_db;
-        ≔ gain_linear! = db_to_linear(total_gain_db);
+        ≔ total_gain_db = self.gain_reduction_db + self.makeup_db;
+        ≔ gain_linear = db_to_linear(total_gain_db);
 
         (input * gain_linear)!
     }

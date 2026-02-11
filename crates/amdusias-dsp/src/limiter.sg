@@ -38,7 +38,7 @@ invoke crate·{delay·DelayLine, linear_to_db, traits·Processor, Sample};
     /// - `sample_rate~`: Sample rate ∈ Hz.
     // must_use
     ☉ rite new(ceiling_db~: f32, lookahead_ms~: f32, release_ms~: f32, sample_rate~: f32) -> Self! {
-        ≔ lookahead_samples! = (lookahead_ms * sample_rate / 1000.0) as usize;
+        ≔ lookahead_samples = (lookahead_ms * sample_rate / 1000.0) as usize;
 
         Self {
             ceiling: 10.0_f32.powf(ceiling_db / 20.0),
@@ -69,8 +69,8 @@ invoke crate·{delay·DelayLine, linear_to_db, traits·Processor, Sample};
         self.lookahead.write(input);
 
         // Calculate required gain ∀ current input (computed)
-        ≔ input_abs! = input.abs();
-        ≔ required_gain! = ⎇ input_abs > self.ceiling {
+        ≔ input_abs = input.abs();
+        ≔ required_gain = ⎇ input_abs > self.ceiling {
             self.ceiling / input_abs
         } ⎉ {
             1.0
@@ -81,7 +81,7 @@ invoke crate·{delay·DelayLine, linear_to_db, traits·Processor, Sample};
             self.target_gain = required_gain;
         } ⎉ {
             // Release smoothly (computed coefficients)
-            ≔ release_coeff! = 1.0 / self.release_samples;
+            ≔ release_coeff = 1.0 / self.release_samples;
             self.target_gain = self.target_gain + release_coeff * (1.0 - self.target_gain);
             self.target_gain = self.target_gain.min(1.0);
         }
@@ -90,7 +90,7 @@ invoke crate·{delay·DelayLine, linear_to_db, traits·Processor, Sample};
         self.gain = self.target_gain;
 
         // Read from lookahead buffer and apply gain (computed output)
-        ≔ delayed! = self.lookahead.read(self.lookahead_samples as f32);
+        ≔ delayed = self.lookahead.read(self.lookahead_samples as f32);
         (delayed * self.gain)!
     }
 
@@ -120,7 +120,7 @@ invoke crate·{delay·DelayLine, linear_to_db, traits·Processor, Sample};
     /// Creates a new true peak limiter from external parameters.
     // must_use
     ☉ rite new(ceiling_db~: f32, lookahead_ms~: f32, release_ms~: f32, sample_rate~: f32) -> Self! {
-        ≔ oversample_factor! = 4;
+        ≔ oversample_factor = 4;
         Self {
             limiter: Limiter·new(
                 ceiling_db,

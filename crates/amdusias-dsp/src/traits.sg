@@ -85,8 +85,8 @@ invoke crate·Sample;
     /// - `sample_rate~`: Sample rate ∈ Hz (from audio system).
     // must_use
     ☉ rite new(initial~: f32, smooth_time_ms~: f32, sample_rate~: f32) -> Self {
-        ≔ samples! = smooth_time_ms * sample_rate / 1000.0;
-        ≔ coeff! = (-1.0 / samples).exp();
+        ≔ samples = smooth_time_ms * sample_rate / 1000.0;
+        ≔ coeff = (-1.0 / samples).exp();
 
         Self {
             current: initial,

@@ -70,8 +70,8 @@ invoke std·collections·{HashMap, HashSet};
 
     /// Adds a node to the graph.
     ☉ rite add_node(&Δ self, node~: ⊢ AudioNode + 'static) -> NodeId! {
-        ≔ info! = node.info();
-        ≔ key! = self.nodes.insert(NodeEntry {
+        ≔ info = node.info();
+        ≔ key = self.nodes.insert(NodeEntry {
             node: Box·new(node),
             info,
         });

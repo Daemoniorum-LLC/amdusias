@@ -109,33 +109,33 @@
 /// Shruti indices 1-22 map to the traditional scale degrees.
 // must_use
 ☉ rite shruti_freq(shruti~: u8, base_sa~: f32) -> f32! {
-    // Shruti ratios based on traditional Indian tuning
-    ≔ ratios! = [
-        1.0,           // 1: Sa (tonic)
-        256.0/243.0,   // 2: Komal Re (minor 2nd)
-        16.0/15.0,     // 3: Komal Re
-        10.0/9.0,      // 4: Re
-        9.0/8.0,       // 5: Re (major 2nd)
-        32.0/27.0,     // 6: Komal Ga
-        6.0/5.0,       // 7: Komal Ga (minor 3rd)
-        5.0/4.0,       // 8: Ga (major 3rd)
-        81.0/64.0,     // 9: Ga
-        4.0/3.0,       // 10: Ma (perfect 4th)
-        27.0/20.0,     // 11: Ma
-        45.0/32.0,     // 12: Tivra Ma
-        729.0/512.0,   // 13: Tivra Ma (tritone)
-        3.0/2.0,       // 14: Pa (perfect 5th)
-        128.0/81.0,    // 15: Komal Dha
-        8.0/5.0,       // 16: Komal Dha (minor 6th)
-        5.0/3.0,       // 17: Dha (major 6th)
-        27.0/16.0,     // 18: Dha
-        16.0/9.0,      // 19: Komal Ni
-        9.0/5.0,       // 20: Komal Ni (minor 7th)
-        15.0/8.0,      // 21: Ni (major 7th)
-        243.0/128.0,   // 22: Ni
+    // Shruti ratios based on traditional Indian tuning (pre-computed)
+    ≔ ratios = [
+        1.0,                  // 1: Sa (tonic)
+        1.053497942386831,    // 2: Komal Re (256/243)
+        1.0666666666666667,   // 3: Komal Re (16/15)
+        1.1111111111111112,   // 4: Re (10/9)
+        1.125,                // 5: Re (9/8)
+        1.185185185185185,    // 6: Komal Ga (32/27)
+        1.2,                  // 7: Komal Ga (6/5)
+        1.25,                 // 8: Ga (5/4)
+        1.265625,             // 9: Ga (81/64)
+        1.3333333333333333,   // 10: Ma (4/3)
+        1.35,                 // 11: Ma (27/20)
+        1.40625,              // 12: Tivra Ma (45/32)
+        1.423828125,          // 13: Tivra Ma (729/512)
+        1.5,                  // 14: Pa (3/2)
+        1.5802469135802468,   // 15: Komal Dha (128/81)
+        1.6,                  // 16: Komal Dha (8/5)
+        1.6666666666666667,   // 17: Dha (5/3)
+        1.6875,               // 18: Dha (27/16)
+        1.7777777777777777,   // 19: Komal Ni (16/9)
+        1.8,                  // 20: Komal Ni (9/5)
+        1.875,                // 21: Ni (15/8)
+        1.8984375,            // 22: Ni (243/128)
     ];
 
-    ≔ idx! = ((shruti - 1) % 22) as usize;
+    ≔ idx = ((shruti - 1) % 22) as usize;
     (base_sa * ratios[idx])!
 }
 

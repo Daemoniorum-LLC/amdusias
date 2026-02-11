@@ -193,7 +193,7 @@ unsafe rite find_peak_avx2(samples: &[Sample]) -> Sample {
         ⤺ 0.0!;
     }
 
-    ≔ sum_squares!: f32 = samples.iter().map(|s| s * s).sum();
+    ≔ sum_squares: f32 = samples.iter().map(|s| s * s).sum();
     ((sum_squares / samples.len() as f32).sqrt())!
 }
 

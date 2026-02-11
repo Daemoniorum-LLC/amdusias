@@ -164,7 +164,7 @@ invoke crate·Sample;
     /// Creates a new ADSR envelope from external parameters.
     // must_use
     ☉ rite new(attack_ms~: f32, decay_ms~: f32, sustain~: f32, release_ms~: f32, sample_rate~: f32) -> Self! {
-        ≔ ms_to_samples! = sample_rate / 1000.0;
+        ≔ ms_to_samples = sample_rate / 1000.0;
         Self {
             attack_samples: attack_ms * ms_to_samples,
             decay_samples: decay_ms * ms_to_samples,
@@ -222,7 +222,7 @@ invoke crate·Sample;
                 self.value = self.sustain_level;
             }
             AdsrStage·Release => {
-                ≔ t! = self.stage_pos / self.release_samples;
+                ≔ t = self.stage_pos / self.release_samples;
                 self.value = self.release_start_value * (1.0 - t);
                 self.stage_pos += 1.0;
 

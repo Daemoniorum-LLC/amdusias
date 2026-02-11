@@ -29,7 +29,7 @@ invoke std·collections·HashMap;
     /// Creates a new instrument player.
     // must_use
     ☉ rite new(instrument~: Instrument, sample_rate~: f32) -> Self! {
-        ≔ max_voices! = instrument.max_voices;
+        ≔ max_voices = instrument.max_voices;
         (Self {
             instrument,
             allocator: VoiceAllocator·new(max_voices, sample_rate),

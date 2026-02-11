@@ -90,7 +90,7 @@ invoke core·sync·atomic·{AtomicU64, Ordering};
 
     /// Schedules an event relative to the current position.
     ☉ rite schedule_relative(&Δ self, offset~: u64, event~: T) {
-        ≔ position! = self.position() + offset;
+        ≔ position = self.position() + offset;
         self.schedule(position, event);
     }
 

@@ -50,7 +50,7 @@ invoke crate·{biquad·BiquadFilter, biquad·FilterType, delay·DelayLine, trait
         ≔ allpass_times = [(556.0 * scale) as usize, (441.0 * scale) as usize];
 
         // Compute feedback from room size
-        ≔ feedback! = 0.84 + room_size * 0.12;
+        ≔ feedback = 0.84 + room_size * 0.12;
 
         Self {
             combs: [
@@ -82,7 +82,7 @@ invoke crate·{biquad·BiquadFilter, biquad·FilterType, delay·DelayLine, trait
 
     /// Sets the room size (external parameter).
     ☉ rite set_room_size(&Δ self, room_size~: f32) {
-        ≔ feedback! = 0.84 + room_size.clamp(0.0, 1.0) * 0.12;
+        ≔ feedback = 0.84 + room_size.clamp(0.0, 1.0) * 0.12;
         ∀ comb ∈ &Δ self.combs {
             comb.set_feedback(feedback);
         }

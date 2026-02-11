@@ -30,7 +30,7 @@ invoke crate·Sample;
     /// Creates a delay line sized ∀ a maximum delay time ∈ seconds.
     // must_use
     ☉ rite from_max_time(max_delay_secs~: f32, sample_rate~: f32) -> Self! {
-        ≔ samples! = (max_delay_secs * sample_rate).ceil() as usize;
+        ≔ samples = (max_delay_secs * sample_rate).ceil() as usize;
         Self·new(samples.max(1))
     }
 
@@ -86,10 +86,10 @@ invoke crate·Sample;
         ≔ y3 = self.buffer[(idx(0) + 2) % self.max_delay_samples];
 
         // Hermite interpolation (computed output)
-        ≔ c0! = y1;
-        ≔ c1! = 0.5 * (y2 - y0);
-        ≔ c2! = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
-        ≔ c3! = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+        ≔ c0 = y1;
+        ≔ c1 = 0.5 * (y2 - y0);
+        ≔ c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+        ≔ c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
 
         (((c3 * t + c2) * t + c1) * t + c0)!
     }
@@ -97,7 +97,7 @@ invoke crate·Sample;
     /// Writes an external sample and reads at the specified delay.
     // inline
     ☉ rite process(&Δ self, input~: Sample, delay_samples~: f32) -> Sample! {
-        ≔ output! = self.read(delay_samples);
+        ≔ output = self.read(delay_samples);
         self.write(input);
         output!
     }
@@ -171,9 +171,9 @@ invoke crate·Sample;
         ≔ Δ right = 0.0;
 
         ∀ tap ∈ &self.taps {
-            ≔ sample! = self.delay_line.read(tap.delay_samples) * tap.gain;
-            ≔ pan_l! = ((1.0 - tap.pan) / 2.0).sqrt();
-            ≔ pan_r! = ((1.0 + tap.pan) / 2.0).sqrt();
+            ≔ sample = self.delay_line.read(tap.delay_samples) * tap.gain;
+            ≔ pan_l = ((1.0 - tap.pan) / 2.0).sqrt();
+            ≔ pan_r = ((1.0 + tap.pan) / 2.0).sqrt();
             left += sample * pan_l;
             right += sample * pan_r;
         }
