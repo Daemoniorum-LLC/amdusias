@@ -1,0 +1,37 @@
+[package]
+name = "amdusias-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Core real-time audio primitives: lock-free queues, SIMD buffers, scheduling"
+keywords = ["audio", "real-time", "lock-free", "simd", "buffer"]
+categories = ["multimedia::audio", "concurrency", "no-std"]
+
+[features]
+default = ["std"]
+std = []
+simd = ["wide", "pulp", "safe_arch"]
+
+[dependencies]
+# Error handling
+thiserror.workspace = true
+
+# SIMD (optional, enabled by default)
+wide = { workspace = true, optional = true }
+pulp = { workspace = true, optional = true }
+safe_arch = { workspace = true, optional = true }
+
+# Lock-free utilities
+crossbeam-utils.workspace = true
+
+# Containers
+smallvec.workspace = true
+arrayvec.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+proptest.workspace = true
+rand.workspace = true

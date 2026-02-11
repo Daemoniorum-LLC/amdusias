@@ -1,0 +1,165 @@
+[workspace]
+resolver = "2"
+members = [
+    # Unified crate (re-exports everything)
+    "crates/amdusias",
+
+    # Core primitives (lock-free, SIMD, buffers, scheduling)
+    "crates/amdusias-core",
+
+    # Hardware abstraction layer (WASAPI, CoreAudio, ALSA, PipeWire)
+    "crates/amdusias-hal",
+
+    # DSP primitives (filters, dynamics, delay, reverb)
+    "crates/amdusias-dsp",
+
+    # Audio graph (node routing, latency compensation)
+    "crates/amdusias-graph",
+
+    # Siren: enchanting sample instruments
+    "crates/amdusias-siren",
+
+    # WebAssembly target (AudioWorklet integration)
+    "crates/amdusias-web",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/daemoniorum/amdusias"
+authors = ["Daemoniorum Engineering <engineering@daemoniorum.com>"]
+rust-version = "1.75"
+keywords = ["audio", "dsp", "daw", "real-time", "music"]
+categories = ["multimedia::audio", "game-development", "wasm"]
+
+[workspace.dependencies]
+# ═══════════════════════════════════════════════════════════════════════════════
+# INTERNAL CRATES
+# ═══════════════════════════════════════════════════════════════════════════════
+amdusias = { path = "crates/amdusias" }
+amdusias-core = { path = "crates/amdusias-core", default-features = true }
+amdusias-hal = { path = "crates/amdusias-hal" }
+amdusias-dsp = { path = "crates/amdusias-dsp", default-features = true }
+amdusias-graph = { path = "crates/amdusias-graph" }
+amdusias-siren = { path = "crates/amdusias-siren" }
+amdusias-web = { path = "crates/amdusias-web" }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CORE UTILITIES
+# ═══════════════════════════════════════════════════════════════════════════════
+thiserror = "2.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONCURRENCY & LOCK-FREE
+# ═══════════════════════════════════════════════════════════════════════════════
+crossbeam-utils = "0.8"
+parking_lot = "0.12"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SIMD & PERFORMANCE
+# ═══════════════════════════════════════════════════════════════════════════════
+wide = "0.7"
+pulp = "0.18"
+safe_arch = "0.7"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONTAINERS
+# ═══════════════════════════════════════════════════════════════════════════════
+smallvec = "1.13"
+arrayvec = "0.7"
+slotmap = "1.0"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SERIALIZATION
+# ═══════════════════════════════════════════════════════════════════════════════
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = "1.3"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASYNC (for non-realtime paths only)
+# ═══════════════════════════════════════════════════════════════════════════════
+tokio = { version = "1.42", features = ["rt", "sync", "fs", "io-util"] }
+futures = "0.3"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WASM
+# ═══════════════════════════════════════════════════════════════════════════════
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "AudioContext",
+    "AudioWorklet",
+    "AudioWorkletNode",
+    "AudioWorkletProcessor",
+    "MessagePort",
+] }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PLATFORM-SPECIFIC (native HAL)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Linux
+alsa = "0.9"
+pipewire = "0.8"
+libc = "0.2"
+
+# Windows (raw bindings, no windows-rs overhead)
+windows-sys = { version = "0.59", features = [
+    "Win32_Media_Audio",
+    "Win32_System_Com",
+    "Win32_System_Threading",
+    "Win32_Foundation",
+] }
+
+# macOS (core-foundation for AudioUnit)
+core-foundation = "0.10"
+coreaudio-sys = "0.2"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TESTING & BENCHMARKING
+# ═══════════════════════════════════════════════════════════════════════════════
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.5"
+rand = "0.8"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WASM DEV
+# ═══════════════════════════════════════════════════════════════════════════════
+console_error_panic_hook = "0.1"
+wasm-bindgen-test = "0.3"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RELEASE PROFILE
+# ═══════════════════════════════════════════════════════════════════════════════
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true
+strip = false
+
+[profile.dev]
+opt-level = 0
+
+[profile.bench]
+inherits = "release"
+debug = true
+
+# Real-time audio profile: maximize performance, minimize jitter
+[profile.realtime]
+inherits = "release"
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+overflow-checks = false
+debug-assertions = false

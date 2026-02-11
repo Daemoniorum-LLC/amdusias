@@ -1,0 +1,41 @@
+[package]
+name = "amdusias-hal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Hardware abstraction layer: WASAPI, CoreAudio, ALSA, PipeWire"
+keywords = ["audio", "wasapi", "coreaudio", "alsa", "pipewire"]
+categories = ["multimedia::audio", "os"]
+
+[features]
+default = []
+alsa = ["dep:alsa"]
+pipewire = ["dep:pipewire"]
+wasapi = ["dep:windows-sys"]
+coreaudio = ["dep:coreaudio-sys", "dep:core-foundation"]
+
+[dependencies]
+amdusias-core.workspace = true
+
+# Error handling
+thiserror.workspace = true
+tracing.workspace = true
+
+# Platform-specific
+[target.'cfg(target_os = "linux")'.dependencies]
+alsa = { workspace = true, optional = true }
+pipewire = { workspace = true, optional = true }
+libc.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+coreaudio-sys = { workspace = true, optional = true }
+core-foundation = { workspace = true, optional = true }
+
+[dev-dependencies]
+tracing-subscriber.workspace = true

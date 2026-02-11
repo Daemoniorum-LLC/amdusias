@@ -1,0 +1,37 @@
+[package]
+name = "amdusias"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Amdusias: Demonic audio engine for professional DAW applications"
+keywords = ["audio", "dsp", "daw", "real-time", "music"]
+categories = ["multimedia::audio", "game-development"]
+
+[features]
+default = ["native"]
+native = ["amdusias-hal"]
+web = ["amdusias-web"]
+full = ["native", "web", "siren"]
+siren = ["amdusias-siren"]
+
+[dependencies]
+# Core (always included)
+amdusias-core.workspace = true
+amdusias-dsp.workspace = true
+amdusias-graph.workspace = true
+
+# Optional components
+amdusias-hal = { workspace = true, optional = true }
+amdusias-siren = { workspace = true, optional = true }
+amdusias-web = { workspace = true, optional = true }
+
+# Re-export common deps
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tracing-subscriber.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

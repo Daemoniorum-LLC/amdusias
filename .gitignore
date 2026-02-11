@@ -1,0 +1,35 @@
+# Build outputs
+target/
+dist/
+pkg/
+
+# Cargo
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*:Zone.Identifier
+
+# Test/coverage
+.coverage
+htmlcov/
+*.profraw
+*.profdata
+
+# WASM build artifacts
+*.wasm
+*.wasm.map
+
+# Audio test files (large)
+*.wav
+*.mp3
+*.flac
+*.ogg

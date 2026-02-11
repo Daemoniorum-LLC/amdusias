@@ -1,0 +1,479 @@
+//! Dynamics compressor implementation.
+
+use crate::{
+    db_to_linear, envelope::EnvelopeDetector, envelope::EnvelopeMode, linear_to_db,
+    traits::Processor, Sample,
+};
+
+/// Dynamics compressor with soft-knee and lookahead.
+#[derive(Debug, Clone)]
+pub struct Compressor {
+    /// Threshold in dB.
+    threshold_db: f32,
+    /// Compression ratio (e.g., 4.0 = 4:1).
+    ratio: f32,
+    /// Knee width in dB.
+    knee_db: f32,
+    /// Makeup gain in dB.
+    makeup_db: f32,
+    /// Envelope detector.
+    envelope: EnvelopeDetector,
+    /// Current gain reduction in dB (for metering).
+    gain_reduction_db: f32,
+}
+
+impl Compressor {
+    /// Creates a new compressor with default settings.
+    #[must_use]
+    pub fn new(sample_rate: f32) -> Self {
+        Self {
+            threshold_db: -20.0,
+            ratio: 4.0,
+            knee_db: 6.0,
+            makeup_db: 0.0,
+            envelope: EnvelopeDetector::new(10.0, 100.0, sample_rate, EnvelopeMode::Peak),
+            gain_reduction_db: 0.0,
+        }
+    }
+
+    /// Sets the threshold in dB.
+    pub fn set_threshold(&mut self, threshold_db: f32) {
+        self.threshold_db = threshold_db;
+    }
+
+    /// Sets the compression ratio.
+    pub fn set_ratio(&mut self, ratio: f32) {
+        self.ratio = ratio.max(1.0);
+    }
+
+    /// Sets the knee width in dB.
+    pub fn set_knee(&mut self, knee_db: f32) {
+        self.knee_db = knee_db.max(0.0);
+    }
+
+    /// Sets the makeup gain in dB.
+    pub fn set_makeup(&mut self, makeup_db: f32) {
+        self.makeup_db = makeup_db;
+    }
+
+    /// Sets attack time in milliseconds.
+    pub fn set_attack(&mut self, attack_ms: f32, sample_rate: f32) {
+        self.envelope.set_attack(attack_ms, sample_rate);
+    }
+
+    /// Sets release time in milliseconds.
+    pub fn set_release(&mut self, release_ms: f32, sample_rate: f32) {
+        self.envelope.set_release(release_ms, sample_rate);
+    }
+
+    /// Returns the current gain reduction in dB (for metering).
+    #[must_use]
+    pub fn gain_reduction_db(&self) -> f32 {
+        self.gain_reduction_db
+    }
+
+    /// Calculates the gain reduction for a given input level in dB.
+    fn compute_gain_reduction(&self, input_db: f32) -> f32 {
+        let half_knee = self.knee_db / 2.0;
+        let knee_start = self.threshold_db - half_knee;
+        let knee_end = self.threshold_db + half_knee;
+
+        if input_db < knee_start {
+            // Below knee: no compression
+            0.0
+        } else if input_db > knee_end {
+            // Above knee: full compression
+            self.threshold_db + (input_db - self.threshold_db) / self.ratio - input_db
+        } else {
+            // In knee: smooth transition
+            let x = input_db - knee_start;
+            let slope = 1.0 / self.ratio - 1.0;
+            slope * x * x / (2.0 * self.knee_db)
+        }
+    }
+}
+
+impl Processor for Compressor {
+    fn process_sample(&mut self, input: Sample) -> Sample {
+        // Get envelope level
+        let envelope_linear = self.envelope.process(input);
+        let envelope_db = linear_to_db(envelope_linear);
+
+        // Calculate gain reduction
+        self.gain_reduction_db = self.compute_gain_reduction(envelope_db);
+
+        // Apply gain reduction + makeup
+        let total_gain_db = self.gain_reduction_db + self.makeup_db;
+        let gain_linear = db_to_linear(total_gain_db);
+
+        input * gain_linear
+    }
+
+    fn reset(&mut self) {
+        self.envelope.reset();
+        self.gain_reduction_db = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compressor_below_threshold() {
+        let mut comp = Compressor::new(48000.0);
+        comp.set_threshold(-10.0);
+
+        // Low-level signal should pass through unchanged
+        let output = comp.process_sample(0.1);
+        assert!((output - 0.1).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_gain_reduction() {
+        let mut comp = Compressor::new(48000.0);
+        comp.set_threshold(-20.0);
+        comp.set_ratio(4.0);
+        comp.set_knee(0.0);
+
+        // Feed loud signal to build up envelope
+        for _ in 0..1000 {
+            comp.process_sample(1.0);
+        }
+
+        // Should have significant gain reduction
+        assert!(comp.gain_reduction_db() < -5.0);
+    }
+
+    // =========================================================================
+    // Phase 2 TDD: Comprehensive compressor tests
+    // =========================================================================
+
+    #[test]
+    fn test_hard_knee_compression_ratio() {
+        // Test 4:1 ratio with hard knee
+        let mut comp = Compressor::new(48000.0);
+        comp.set_threshold(-20.0);
+        comp.set_ratio(4.0);
+        comp.set_knee(0.0); // Hard knee
+        comp.set_makeup(0.0);
+
+        // The compute_gain_reduction function should follow the ratio
+        // For input at 0dB (20dB above -20dB threshold):
+        // With 4:1 ratio: output should be at -20 + 20/4 = -15dB
+        // Gain reduction = -15 - 0 = -15dB
+        let gr = comp.compute_gain_reduction(0.0);
+        let expected = -20.0 + (0.0 - (-20.0)) / 4.0 - 0.0; // = -15dB
+        assert!(
+            (gr - expected).abs() < 0.01,
+            "4:1 gain reduction at 0dB: expected {}, got {}",
+            expected,
+            gr
+        );
+    }
+
+    #[test]
+    fn test_ratio_infinity() {
+        // Test infinite ratio (limiter behavior)
+        let mut comp = Compressor::new(48000.0);
+        comp.set_threshold(-10.0);
+        comp.set_ratio(100.0); // Very high ratio ≈ limiting
+        comp.set_knee(0.0);
+
+        // At 0dB (10dB above threshold):
+        // With 100:1: output = -10 + 10/100 = -9.9dB
+        // GR = -9.9 - 0 = -9.9dB (nearly full attenuation above threshold)
+        let gr = comp.compute_gain_reduction(0.0);
+        assert!(
+            gr < -9.8,
+            "High ratio should give near-full reduction: got {}",
+            gr
+        );
+    }
+
+    #[test]
+    fn test_ratio_one_is_bypass() {
+        // 1:1 ratio means no compression
+        let mut comp = Compressor::new(48000.0);
+        comp.set_threshold(-20.0);
+        comp.set_ratio(1.0);
+        comp.set_knee(0.0);
+
+        // At any level, 1:1 ratio = no gain reduction
+        let gr = comp.compute_gain_reduction(0.0);
+        assert!(
+            gr.abs() < 0.01,
+            "1:1 ratio should give zero reduction: got {}",
+            gr
+        );
+    }
+
+    #[test]
+    fn test_soft_knee_transition() {
+        let mut comp = Compressor::new(48000.0);
+        comp.set_threshold(-20.0);
+        comp.set_ratio(4.0);
+        comp.set_knee(6.0); // 6dB knee (-23 to -17 dB)
+
+        // Below knee start: no compression
+        let gr_below = comp.compute_gain_reduction(-24.0);
+        assert!(
+            gr_below.abs() < 0.001,
+            "Below knee should have zero GR: got {}",
+            gr_below
+        );
+
+        // In the knee: partial compression
+        let gr_in_knee = comp.compute_gain_reduction(-20.0); // At threshold
+        assert!(
+            gr_in_knee < 0.0 && gr_in_knee > -3.0,
+            "In knee should have partial GR: got {}",
+            gr_in_knee
+        );
+
+        // Above knee: full ratio compression
+        let gr_above = comp.compute_gain_reduction(-10.0); // 10dB above threshold
+        let expected_full = -20.0 + (-10.0 - (-20.0)) / 4.0 - (-10.0);
+        assert!(
+            (gr_above - expected_full).abs() < 0.1,
+            "Above knee should have full ratio: expected {}, got {}",
+            expected_full,
+            gr_above
+        );
+    }
+
+    #[test]
+    fn test_makeup_gain() {
+        let mut comp = Compressor::new(48000.0);
+        comp.set_threshold(-20.0);
+        comp.set_ratio(4.0);
+        comp.set_knee(0.0);
+        comp.set_makeup(6.0); // 6dB makeup
+
+        // Fast attack to stabilize
+        comp.set_attack(0.1, 48000.0);
+
+        // Feed loud signal
+        for _ in 0..1000 {
+            comp.process_sample(1.0);
+        }
+
+        // Process and check makeup is applied
+        let output = comp.process_sample(1.0);
+        let gr = comp.gain_reduction_db();
+
+        // Output should be input * GR * makeup
+        // In dB: 0dB (input) + GR + 6dB (makeup)
+        let expected_db = 0.0 + gr + 6.0;
+        let actual_db = linear_to_db(output);
+
+        assert!(
+            (actual_db - expected_db).abs() < 1.0,
+            "Makeup gain mismatch: expected ~{}dB, got {}dB",
+            expected_db,
+            actual_db
+        );
+    }
+
+    #[test]
+    fn test_attack_timing() {
+        let sample_rate = 48000.0;
+        let attack_ms = 10.0;
+        let attack_samples = (attack_ms * sample_rate / 1000.0) as usize;
+
+        let mut comp = Compressor::new(sample_rate);
+        comp.set_threshold(-40.0); // Very low threshold
+        comp.set_ratio(10.0);
+        comp.set_knee(0.0);
+        comp.set_attack(attack_ms, sample_rate);
+        comp.set_release(100.0, sample_rate);
+
+        // Start with silence, then loud signal
+        for _ in 0..100 {
+            comp.process_sample(0.0);
+        }
+
+        // Feed loud signal and measure how fast GR develops
+        let mut gr_values = Vec::new();
+        for _ in 0..attack_samples * 3 {
+            comp.process_sample(1.0);
+            gr_values.push(comp.gain_reduction_db());
+        }
+
+        // After 2-3 attack times, should have significant GR
+        let final_gr = gr_values.last().unwrap();
+        assert!(
+            *final_gr < -10.0,
+            "After 3x attack time, should have significant GR: got {}",
+            final_gr
+        );
+
+        // GR should increase (become more negative) over time
+        let early_gr = gr_values[attack_samples / 2];
+        let mid_gr = gr_values[attack_samples];
+        let late_gr = gr_values[attack_samples * 2];
+
+        assert!(
+            early_gr > mid_gr,
+            "GR should increase: early {} should be > mid {}",
+            early_gr,
+            mid_gr
+        );
+        assert!(
+            mid_gr > late_gr,
+            "GR should increase: mid {} should be > late {}",
+            mid_gr,
+            late_gr
+        );
+    }
+
+    #[test]
+    fn test_release_timing() {
+        let sample_rate = 48000.0;
+        let release_ms = 50.0;
+        let release_samples = (release_ms * sample_rate / 1000.0) as usize;
+
+        let mut comp = Compressor::new(sample_rate);
+        comp.set_threshold(-40.0);
+        comp.set_ratio(10.0);
+        comp.set_knee(0.0);
+        comp.set_attack(1.0, sample_rate); // Fast attack
+        comp.set_release(release_ms, sample_rate);
+
+        // Build up GR with loud signal
+        for _ in 0..2000 {
+            comp.process_sample(1.0);
+        }
+
+        let gr_before = comp.gain_reduction_db();
+        assert!(gr_before < -10.0, "Should have GR before release");
+
+        // Switch to silence and measure release
+        let mut gr_values = Vec::new();
+        for _ in 0..release_samples * 5 {
+            comp.process_sample(0.0001); // Near silence
+            gr_values.push(comp.gain_reduction_db());
+        }
+
+        // GR should decrease (become less negative) over time
+        let final_gr = gr_values.last().unwrap();
+        assert!(
+            *final_gr > gr_before,
+            "GR should release: final {} should be > initial {}",
+            final_gr,
+            gr_before
+        );
+    }
+
+    #[test]
+    fn test_reset() {
+        let mut comp = Compressor::new(48000.0);
+        comp.set_threshold(-20.0);
+        comp.set_ratio(4.0);
+
+        // Build up state
+        for _ in 0..1000 {
+            comp.process_sample(1.0);
+        }
+        assert!(comp.gain_reduction_db() < -5.0);
+
+        // Reset
+        comp.reset();
+        assert!(
+            comp.gain_reduction_db().abs() < 0.01,
+            "GR should be zero after reset: got {}",
+            comp.gain_reduction_db()
+        );
+    }
+
+    #[test]
+    fn test_various_ratios() {
+        // Test common compression ratios
+        let ratios = [2.0, 4.0, 8.0, 10.0, 20.0];
+        let threshold = -20.0;
+        let input_db = 0.0; // 20dB above threshold
+
+        for ratio in ratios {
+            let mut comp = Compressor::new(48000.0);
+            comp.set_threshold(threshold);
+            comp.set_ratio(ratio);
+            comp.set_knee(0.0);
+
+            let gr = comp.compute_gain_reduction(input_db);
+
+            // Expected: threshold + (input - threshold) / ratio - input
+            let expected = threshold + (input_db - threshold) / ratio - input_db;
+
+            assert!(
+                (gr - expected).abs() < 0.01,
+                "Ratio {}: expected GR {}, got {}",
+                ratio,
+                expected,
+                gr
+            );
+        }
+    }
+
+    #[test]
+    fn test_no_compression_below_threshold() {
+        let mut comp = Compressor::new(48000.0);
+        comp.set_threshold(-20.0);
+        comp.set_ratio(4.0);
+        comp.set_knee(0.0);
+
+        // Test several levels below threshold
+        for level_db in [-40.0, -30.0, -25.0, -21.0] {
+            let gr = comp.compute_gain_reduction(level_db);
+            assert!(
+                gr.abs() < 0.001,
+                "Below threshold at {}dB should have zero GR: got {}",
+                level_db,
+                gr
+            );
+        }
+    }
+
+    #[test]
+    fn test_knee_width_affects_transition() {
+        let mut narrow_knee = Compressor::new(48000.0);
+        narrow_knee.set_threshold(-20.0);
+        narrow_knee.set_ratio(4.0);
+        narrow_knee.set_knee(2.0); // Narrow knee
+
+        let mut wide_knee = Compressor::new(48000.0);
+        wide_knee.set_threshold(-20.0);
+        wide_knee.set_ratio(4.0);
+        wide_knee.set_knee(12.0); // Wide knee
+
+        // At threshold center, wide knee has MORE GR because:
+        // - Wide knee starts earlier (at threshold - half_knee)
+        // - At -20dB, narrow knee is only 1dB into the knee region
+        // - At -20dB, wide knee is 6dB into the knee region
+        let gr_narrow = narrow_knee.compute_gain_reduction(-20.0);
+        let gr_wide = wide_knee.compute_gain_reduction(-20.0);
+
+        assert!(
+            gr_wide.abs() > gr_narrow.abs(),
+            "Wide knee should have more GR at threshold center: wide={}, narrow={}",
+            gr_wide,
+            gr_narrow
+        );
+
+        // But BELOW the knee, narrow starts compressing sooner
+        // For narrow knee (-21 to -19), at -20.5 we're in the knee
+        // For wide knee (-26 to -14), at -20.5 we're also in the knee
+        // The transition is smoother with wider knee
+        let gr_narrow_at_knee_start = narrow_knee.compute_gain_reduction(-21.0);
+        let gr_wide_at_knee_start = wide_knee.compute_gain_reduction(-26.0);
+
+        // Both should be zero at their respective knee starts
+        assert!(
+            gr_narrow_at_knee_start.abs() < 0.001,
+            "Narrow knee should have zero GR at knee start"
+        );
+        assert!(
+            gr_wide_at_knee_start.abs() < 0.001,
+            "Wide knee should have zero GR at knee start"
+        );
+    }
+}

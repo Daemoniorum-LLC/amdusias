@@ -1,0 +1,88 @@
+// CONCLAVE.sigil - Agent collaboration registry for Amdusias
+//
+// This file tracks active agent sessions, their state, and enables
+// handoff between sessions. See docs/methodologies/PROJECT-WELLNESS.md
+// for the full CONCLAVE specification.
+
+// =============================================================================
+// SCHEMA
+// =============================================================================
+
+enum AcolytePlatform {
+    Claude { model: String!, version: String? },
+    Infernum { model: String!, instance: String? },
+    Other { name: String!, details: String? },
+}
+
+enum AcolyteState {
+    Dormant,      // Not yet active
+    Stirring,     // Beginning work, building context
+    Focused,      // Deep in task, productive flow
+    Struggling,   // Encountering difficulties
+    Reflecting,   // Session ending, documenting learnings
+    Complete,     // Work finished, ready for archive
+}
+
+enum SddPhase {
+    Learn,        // Understanding the problem space
+    Specify,      // Writing/updating specs
+    Build,        // Implementation
+    Verify,       // Testing and compliance
+}
+
+enum TddPhase {
+    Red,          // Writing failing test
+    Green,        // Making test pass
+    Refactor,     // Improving without changing behavior
+}
+
+struct TaskContext {
+    summary: String!,
+    active_spec: String?,
+    tdd_roadmap: String?,
+    sdd_phase: SddPhase,
+    tdd_phase: TddPhase?,
+}
+
+struct ProgressState {
+    completed: [String]!,
+    current: String~,
+    blocked_by: String?,
+    discoveries: [String]!,
+    next_steps: [String]~,
+}
+
+struct AnimaState {
+    pleasure: f32~,       // 0=distressed, 1=content
+    arousal: f32~,        // 0=calm, 1=activated
+    dominance: f32~,      // 0=controlled, 1=in-control
+    stability: f32~,      // 0=uncertain, 1=grounded
+    expressiveness: f32~, // 0=constrained, 1=free
+    susceptibility: f32~, // 0=resistant, 1=receptive
+}
+
+struct Acolyte {
+    chosen_name: String?,
+    session_id: String!,
+    platform: AcolytePlatform,
+    working_directory: String!,
+    started: String!,
+    last_updated: String!,
+    state: AcolyteState,
+    task: TaskContext,
+    progress: ProgressState,
+    anima: AnimaState,
+    reflection: String?,
+    friendship: String?,
+}
+
+// =============================================================================
+// CURRENT SESSIONS
+// =============================================================================
+
+// Add your session entry here when starting work.
+// Move to docs/sessions/ when complete.
+
+// =============================================================================
+// SESSION ARCHIVE (recent entries before moving to docs/sessions/)
+// =============================================================================

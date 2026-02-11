@@ -1,0 +1,47 @@
+[package]
+name = "amdusias-siren"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Siren: enchanting multi-sample instruments, articulations, and amp modeling"
+keywords = ["audio", "sampler", "guitar", "instrument", "soundfont"]
+categories = ["multimedia::audio", "game-development"]
+
+[features]
+default = []
+guitar = []      # Guitar-specific modeling (strings, pickups, amps, cabinets)
+orchestra = []   # Orchestral instruments
+synth = []       # Synthesizer engines
+
+[dependencies]
+amdusias-core.workspace = true
+amdusias-dsp.workspace = true
+amdusias-graph.workspace = true
+
+# Error handling
+thiserror.workspace = true
+tracing.workspace = true
+
+# Serialization (for instrument definitions)
+serde.workspace = true
+serde_json.workspace = true
+bincode.workspace = true
+
+# Containers
+slotmap.workspace = true
+smallvec.workspace = true
+
+# Async file loading (non-realtime path)
+tokio.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+rand.workspace = true
+proptest.workspace = true
+
+[[bench]]
+name = "voice_allocation"
+harness = false

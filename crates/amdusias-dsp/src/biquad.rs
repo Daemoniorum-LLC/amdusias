@@ -1,0 +1,600 @@
+//! Biquad filter implementation.
+//!
+//! A biquad is a second-order IIR filter, the building block for parametric EQ,
+//! crossovers, and many other filter types.
+
+use crate::{traits::Processor, Sample};
+
+/// Filter type for biquad.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FilterType {
+    /// Low-pass filter (attenuates high frequencies).
+    Lowpass,
+    /// High-pass filter (attenuates low frequencies).
+    Highpass,
+    /// Band-pass filter (passes frequencies around center).
+    Bandpass,
+    /// Notch filter (attenuates frequencies around center).
+    Notch,
+    /// All-pass filter (phase shift only).
+    Allpass,
+    /// Peaking EQ (boost/cut around center frequency).
+    Peaking {
+        /// Gain in dB.
+        gain_db: f32,
+    },
+    /// Low shelf (boost/cut below frequency).
+    LowShelf {
+        /// Gain in dB.
+        gain_db: f32,
+    },
+    /// High shelf (boost/cut above frequency).
+    HighShelf {
+        /// Gain in dB.
+        gain_db: f32,
+    },
+}
+
+/// Biquad filter coefficients.
+#[derive(Debug, Clone, Copy)]
+pub struct BiquadCoeffs {
+    /// Feedforward coefficient b0.
+    pub b0: f32,
+    /// Feedforward coefficient b1.
+    pub b1: f32,
+    /// Feedforward coefficient b2.
+    pub b2: f32,
+    /// Feedback coefficient a1 (normalized, a0 = 1).
+    pub a1: f32,
+    /// Feedback coefficient a2.
+    pub a2: f32,
+}
+
+impl BiquadCoeffs {
+    /// Calculates coefficients for the given filter type.
+    #[must_use]
+    pub fn calculate(filter_type: FilterType, freq: f32, q: f32, sample_rate: f32) -> Self {
+        let omega = 2.0 * std::f32::consts::PI * freq / sample_rate;
+        let sin_omega = omega.sin();
+        let cos_omega = omega.cos();
+        let alpha = sin_omega / (2.0 * q);
+
+        let (b0, b1, b2, a0, a1, a2) = match filter_type {
+            FilterType::Lowpass => {
+                let b1 = 1.0 - cos_omega;
+                let b0 = b1 / 2.0;
+                let b2 = b0;
+                let a0 = 1.0 + alpha;
+                let a1 = -2.0 * cos_omega;
+                let a2 = 1.0 - alpha;
+                (b0, b1, b2, a0, a1, a2)
+            }
+            FilterType::Highpass => {
+                let b1 = -(1.0 + cos_omega);
+                let b0 = (1.0 + cos_omega) / 2.0;
+                let b2 = b0;
+                let a0 = 1.0 + alpha;
+                let a1 = -2.0 * cos_omega;
+                let a2 = 1.0 - alpha;
+                (b0, b1, b2, a0, a1, a2)
+            }
+            FilterType::Bandpass => {
+                let b0 = alpha;
+                let b1 = 0.0;
+                let b2 = -alpha;
+                let a0 = 1.0 + alpha;
+                let a1 = -2.0 * cos_omega;
+                let a2 = 1.0 - alpha;
+                (b0, b1, b2, a0, a1, a2)
+            }
+            FilterType::Notch => {
+                let b0 = 1.0;
+                let b1 = -2.0 * cos_omega;
+                let b2 = 1.0;
+                let a0 = 1.0 + alpha;
+                let a1 = -2.0 * cos_omega;
+                let a2 = 1.0 - alpha;
+                (b0, b1, b2, a0, a1, a2)
+            }
+            FilterType::Allpass => {
+                let b0 = 1.0 - alpha;
+                let b1 = -2.0 * cos_omega;
+                let b2 = 1.0 + alpha;
+                let a0 = 1.0 + alpha;
+                let a1 = -2.0 * cos_omega;
+                let a2 = 1.0 - alpha;
+                (b0, b1, b2, a0, a1, a2)
+            }
+            FilterType::Peaking { gain_db } => {
+                let a = 10.0_f32.powf(gain_db / 40.0);
+                let b0 = 1.0 + alpha * a;
+                let b1 = -2.0 * cos_omega;
+                let b2 = 1.0 - alpha * a;
+                let a0 = 1.0 + alpha / a;
+                let a1 = -2.0 * cos_omega;
+                let a2 = 1.0 - alpha / a;
+                (b0, b1, b2, a0, a1, a2)
+            }
+            FilterType::LowShelf { gain_db } => {
+                let a = 10.0_f32.powf(gain_db / 40.0);
+                let sqrt_a = a.sqrt();
+                let b0 = a * ((a + 1.0) - (a - 1.0) * cos_omega + 2.0 * sqrt_a * alpha);
+                let b1 = 2.0 * a * ((a - 1.0) - (a + 1.0) * cos_omega);
+                let b2 = a * ((a + 1.0) - (a - 1.0) * cos_omega - 2.0 * sqrt_a * alpha);
+                let a0 = (a + 1.0) + (a - 1.0) * cos_omega + 2.0 * sqrt_a * alpha;
+                let a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cos_omega);
+                let a2 = (a + 1.0) + (a - 1.0) * cos_omega - 2.0 * sqrt_a * alpha;
+                (b0, b1, b2, a0, a1, a2)
+            }
+            FilterType::HighShelf { gain_db } => {
+                let a = 10.0_f32.powf(gain_db / 40.0);
+                let sqrt_a = a.sqrt();
+                let b0 = a * ((a + 1.0) + (a - 1.0) * cos_omega + 2.0 * sqrt_a * alpha);
+                let b1 = -2.0 * a * ((a - 1.0) + (a + 1.0) * cos_omega);
+                let b2 = a * ((a + 1.0) + (a - 1.0) * cos_omega - 2.0 * sqrt_a * alpha);
+                let a0 = (a + 1.0) - (a - 1.0) * cos_omega + 2.0 * sqrt_a * alpha;
+                let a1 = 2.0 * ((a - 1.0) - (a + 1.0) * cos_omega);
+                let a2 = (a + 1.0) - (a - 1.0) * cos_omega - 2.0 * sqrt_a * alpha;
+                (b0, b1, b2, a0, a1, a2)
+            }
+        };
+
+        // Normalize by a0
+        Self {
+            b0: b0 / a0,
+            b1: b1 / a0,
+            b2: b2 / a0,
+            a1: a1 / a0,
+            a2: a2 / a0,
+        }
+    }
+}
+
+/// Biquad filter with state.
+#[derive(Debug, Clone)]
+pub struct BiquadFilter {
+    coeffs: BiquadCoeffs,
+    /// State variable z^-1.
+    z1: f32,
+    /// State variable z^-2.
+    z2: f32,
+    sample_rate: f32,
+}
+
+impl BiquadFilter {
+    /// Creates a new biquad filter.
+    #[must_use]
+    pub fn new(filter_type: FilterType, freq: f32, q: f32, sample_rate: f32) -> Self {
+        Self {
+            coeffs: BiquadCoeffs::calculate(filter_type, freq, q, sample_rate),
+            z1: 0.0,
+            z2: 0.0,
+            sample_rate,
+        }
+    }
+
+    /// Updates the filter coefficients.
+    pub fn set_params(&mut self, filter_type: FilterType, freq: f32, q: f32) {
+        self.coeffs = BiquadCoeffs::calculate(filter_type, freq, q, self.sample_rate);
+    }
+
+    /// Returns the current coefficients.
+    #[must_use]
+    pub fn coeffs(&self) -> &BiquadCoeffs {
+        &self.coeffs
+    }
+}
+
+impl Processor for BiquadFilter {
+    fn process_sample(&mut self, input: Sample) -> Sample {
+        // Transposed Direct Form II
+        let output = self.coeffs.b0 * input + self.z1;
+        self.z1 = self.coeffs.b1 * input - self.coeffs.a1 * output + self.z2;
+        self.z2 = self.coeffs.b2 * input - self.coeffs.a2 * output;
+        output
+    }
+
+    fn reset(&mut self) {
+        self.z1 = 0.0;
+        self.z2 = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper: Generate sine wave at given frequency
+    fn generate_sine(freq: f32, sample_rate: f32, num_samples: usize) -> Vec<f32> {
+        (0..num_samples)
+            .map(|i| (2.0 * std::f32::consts::PI * freq * i as f32 / sample_rate).sin())
+            .collect()
+    }
+
+    // Helper: Measure output RMS relative to input
+    fn measure_gain(filter: &mut BiquadFilter, freq: f32, sample_rate: f32) -> f32 {
+        let input = generate_sine(freq, sample_rate, 4096);
+
+        // Reset and let filter settle
+        filter.reset();
+        for &sample in input.iter().take(1024) {
+            filter.process_sample(sample);
+        }
+
+        // Measure RMS of steady-state output
+        let mut sum_sq = 0.0;
+        for &sample in input.iter().skip(1024) {
+            let out = filter.process_sample(sample);
+            sum_sq += out * out;
+        }
+        let output_rms = (sum_sq / 3072.0).sqrt();
+
+        // Input sine wave RMS = 1/sqrt(2)
+        let input_rms = 1.0 / 2.0_f32.sqrt();
+
+        output_rms / input_rms
+    }
+
+    #[test]
+    fn test_lowpass_dc() {
+        let mut filter = BiquadFilter::new(FilterType::Lowpass, 1000.0, 0.707, 48000.0);
+
+        // DC signal should pass through unchanged
+        for _ in 0..1000 {
+            filter.process_sample(1.0);
+        }
+
+        let output = filter.process_sample(1.0);
+        assert!((output - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_highpass_dc() {
+        let mut filter = BiquadFilter::new(FilterType::Highpass, 1000.0, 0.707, 48000.0);
+
+        // DC signal should be blocked
+        for _ in 0..1000 {
+            filter.process_sample(1.0);
+        }
+
+        let output = filter.process_sample(1.0);
+        assert!(output.abs() < 0.01);
+    }
+
+    #[test]
+    fn test_lowpass_frequency_response() {
+        let cutoff = 1000.0;
+        let sample_rate = 48000.0;
+        let mut filter = BiquadFilter::new(FilterType::Lowpass, cutoff, 0.707, sample_rate);
+
+        // Test passband (well below cutoff)
+        let gain_100hz = measure_gain(&mut filter, 100.0, sample_rate);
+        assert!(
+            gain_100hz > 0.95,
+            "Passband gain at 100Hz: {} (expected > 0.95)",
+            gain_100hz
+        );
+
+        // Test cutoff (-3dB point for Butterworth Q=0.707)
+        let gain_cutoff = measure_gain(&mut filter, cutoff, sample_rate);
+        let expected_cutoff_gain = 0.707; // -3dB
+        assert!(
+            (gain_cutoff - expected_cutoff_gain).abs() < 0.1,
+            "Cutoff gain at {}Hz: {} (expected ~0.707)",
+            cutoff,
+            gain_cutoff
+        );
+
+        // Test stopband (well above cutoff)
+        let gain_10khz = measure_gain(&mut filter, 10000.0, sample_rate);
+        assert!(
+            gain_10khz < 0.2,
+            "Stopband gain at 10kHz: {} (expected < 0.2)",
+            gain_10khz
+        );
+    }
+
+    #[test]
+    fn test_highpass_frequency_response() {
+        let cutoff = 1000.0;
+        let sample_rate = 48000.0;
+        let mut filter = BiquadFilter::new(FilterType::Highpass, cutoff, 0.707, sample_rate);
+
+        // Test stopband (well below cutoff)
+        let gain_100hz = measure_gain(&mut filter, 100.0, sample_rate);
+        assert!(
+            gain_100hz < 0.2,
+            "Stopband gain at 100Hz: {} (expected < 0.2)",
+            gain_100hz
+        );
+
+        // Test cutoff
+        let gain_cutoff = measure_gain(&mut filter, cutoff, sample_rate);
+        assert!(
+            (gain_cutoff - 0.707).abs() < 0.1,
+            "Cutoff gain: {} (expected ~0.707)",
+            gain_cutoff
+        );
+
+        // Test passband (well above cutoff)
+        let gain_10khz = measure_gain(&mut filter, 10000.0, sample_rate);
+        assert!(
+            gain_10khz > 0.9,
+            "Passband gain at 10kHz: {} (expected > 0.9)",
+            gain_10khz
+        );
+    }
+
+    #[test]
+    fn test_bandpass_frequency_response() {
+        let center = 1000.0;
+        let sample_rate = 48000.0;
+        let mut filter = BiquadFilter::new(FilterType::Bandpass, center, 2.0, sample_rate);
+
+        // Below center - attenuated
+        let gain_100hz = measure_gain(&mut filter, 100.0, sample_rate);
+        assert!(gain_100hz < 0.3, "Low freq gain: {}", gain_100hz);
+
+        // At center - maximum
+        let gain_center = measure_gain(&mut filter, center, sample_rate);
+        assert!(gain_center > 0.8, "Center gain: {}", gain_center);
+
+        // Above center - attenuated
+        let gain_10khz = measure_gain(&mut filter, 10000.0, sample_rate);
+        assert!(gain_10khz < 0.3, "High freq gain: {}", gain_10khz);
+    }
+
+    #[test]
+    fn test_notch_frequency_response() {
+        let center = 1000.0;
+        let sample_rate = 48000.0;
+        let mut filter = BiquadFilter::new(FilterType::Notch, center, 2.0, sample_rate);
+
+        // Below center - passes
+        let gain_500hz = measure_gain(&mut filter, 500.0, sample_rate);
+        assert!(gain_500hz > 0.8, "Below notch gain: {}", gain_500hz);
+
+        // At center - attenuated
+        let gain_center = measure_gain(&mut filter, center, sample_rate);
+        assert!(gain_center < 0.2, "Notch gain: {}", gain_center);
+
+        // Above center - passes
+        let gain_2khz = measure_gain(&mut filter, 2000.0, sample_rate);
+        assert!(gain_2khz > 0.8, "Above notch gain: {}", gain_2khz);
+    }
+
+    #[test]
+    fn test_peaking_boost() {
+        let center = 1000.0;
+        let sample_rate = 48000.0;
+        let gain_db = 6.0;
+        let mut filter = BiquadFilter::new(
+            FilterType::Peaking { gain_db },
+            center,
+            2.0,
+            sample_rate,
+        );
+
+        // At center - boosted by ~6dB (factor of 2)
+        let gain_center = measure_gain(&mut filter, center, sample_rate);
+        let expected = crate::db_to_linear(gain_db);
+        assert!(
+            (gain_center - expected).abs() < 0.3,
+            "Peak boost: {} (expected ~{})",
+            gain_center,
+            expected
+        );
+
+        // Away from center - unity gain
+        let gain_100hz = measure_gain(&mut filter, 100.0, sample_rate);
+        assert!(
+            (gain_100hz - 1.0).abs() < 0.2,
+            "Off-peak gain: {} (expected ~1.0)",
+            gain_100hz
+        );
+    }
+
+    #[test]
+    fn test_peaking_cut() {
+        let center = 1000.0;
+        let sample_rate = 48000.0;
+        let gain_db = -6.0;
+        let mut filter = BiquadFilter::new(
+            FilterType::Peaking { gain_db },
+            center,
+            2.0,
+            sample_rate,
+        );
+
+        // At center - cut by ~6dB (factor of 0.5)
+        let gain_center = measure_gain(&mut filter, center, sample_rate);
+        let expected = crate::db_to_linear(gain_db);
+        assert!(
+            (gain_center - expected).abs() < 0.2,
+            "Peak cut: {} (expected ~{})",
+            gain_center,
+            expected
+        );
+    }
+
+    #[test]
+    fn test_lowshelf_boost() {
+        let freq = 200.0;
+        let sample_rate = 48000.0;
+        let gain_db = 6.0;
+        let mut filter = BiquadFilter::new(
+            FilterType::LowShelf { gain_db },
+            freq,
+            0.707,
+            sample_rate,
+        );
+
+        // Below shelf - boosted
+        let gain_50hz = measure_gain(&mut filter, 50.0, sample_rate);
+        let expected = crate::db_to_linear(gain_db);
+        assert!(
+            gain_50hz > expected * 0.8,
+            "Below shelf gain: {} (expected ~{})",
+            gain_50hz,
+            expected
+        );
+
+        // Above shelf - unity
+        let gain_2khz = measure_gain(&mut filter, 2000.0, sample_rate);
+        assert!(
+            (gain_2khz - 1.0).abs() < 0.2,
+            "Above shelf gain: {} (expected ~1.0)",
+            gain_2khz
+        );
+    }
+
+    #[test]
+    fn test_highshelf_boost() {
+        let freq = 4000.0;
+        let sample_rate = 48000.0;
+        let gain_db = 6.0;
+        let mut filter = BiquadFilter::new(
+            FilterType::HighShelf { gain_db },
+            freq,
+            0.707,
+            sample_rate,
+        );
+
+        // Below shelf - unity
+        let gain_500hz = measure_gain(&mut filter, 500.0, sample_rate);
+        assert!(
+            (gain_500hz - 1.0).abs() < 0.2,
+            "Below shelf gain: {} (expected ~1.0)",
+            gain_500hz
+        );
+
+        // Above shelf - boosted
+        let gain_10khz = measure_gain(&mut filter, 10000.0, sample_rate);
+        let expected = crate::db_to_linear(gain_db);
+        assert!(
+            gain_10khz > expected * 0.7,
+            "Above shelf gain: {} (expected ~{})",
+            gain_10khz,
+            expected
+        );
+    }
+
+    #[test]
+    fn test_allpass_unity_gain() {
+        let sample_rate = 48000.0;
+        let mut filter = BiquadFilter::new(FilterType::Allpass, 1000.0, 0.707, sample_rate);
+
+        // Allpass should have unity gain at all frequencies
+        for freq in [100.0, 500.0, 1000.0, 5000.0, 10000.0] {
+            let gain = measure_gain(&mut filter, freq, sample_rate);
+            assert!(
+                (gain - 1.0).abs() < 0.1,
+                "Allpass gain at {}Hz: {} (expected ~1.0)",
+                freq,
+                gain
+            );
+        }
+    }
+
+    #[test]
+    fn test_filter_stability_high_q() {
+        // High Q can cause instability in poorly implemented filters
+        let mut filter = BiquadFilter::new(FilterType::Bandpass, 1000.0, 100.0, 48000.0);
+
+        // Process many samples - should not explode
+        let mut max_output = 0.0_f32;
+        for i in 0..10000 {
+            let input = if i == 0 { 1.0 } else { 0.0 }; // Impulse
+            let output = filter.process_sample(input);
+            max_output = max_output.max(output.abs());
+        }
+
+        assert!(
+            max_output.is_finite(),
+            "Filter output became infinite with high Q"
+        );
+        assert!(
+            max_output < 1000.0,
+            "Filter output exploded: {}",
+            max_output
+        );
+    }
+
+    #[test]
+    fn test_filter_stability_extreme_frequency() {
+        // Very low and very high frequencies near Nyquist
+        let sample_rate = 48000.0;
+
+        // Near DC
+        let mut filter_low = BiquadFilter::new(FilterType::Lowpass, 10.0, 0.707, sample_rate);
+        for _ in 0..1000 {
+            let output = filter_low.process_sample(1.0);
+            assert!(output.is_finite(), "Filter unstable near DC");
+        }
+
+        // Near Nyquist
+        let mut filter_high =
+            BiquadFilter::new(FilterType::Lowpass, 23000.0, 0.707, sample_rate);
+        for _ in 0..1000 {
+            let output = filter_high.process_sample(1.0);
+            assert!(output.is_finite(), "Filter unstable near Nyquist");
+        }
+    }
+
+    #[test]
+    fn test_filter_reset() {
+        let mut filter = BiquadFilter::new(FilterType::Lowpass, 1000.0, 0.707, 48000.0);
+
+        // Build up state
+        for _ in 0..100 {
+            filter.process_sample(1.0);
+        }
+
+        // Reset
+        filter.reset();
+
+        // First output after reset should be close to b0 * input (no state contribution)
+        let output = filter.process_sample(1.0);
+        let expected = filter.coeffs().b0;
+        assert!(
+            (output - expected).abs() < 0.01,
+            "After reset: {} (expected {})",
+            output,
+            expected
+        );
+    }
+
+    #[test]
+    fn test_coefficient_sanity() {
+        let coeffs = BiquadCoeffs::calculate(FilterType::Lowpass, 1000.0, 0.707, 48000.0);
+
+        // All coefficients should be finite
+        assert!(coeffs.b0.is_finite());
+        assert!(coeffs.b1.is_finite());
+        assert!(coeffs.b2.is_finite());
+        assert!(coeffs.a1.is_finite());
+        assert!(coeffs.a2.is_finite());
+
+        // For stability, |a2| should be < 1
+        assert!(
+            coeffs.a2.abs() < 1.0,
+            "a2 = {} (unstable if >= 1)",
+            coeffs.a2
+        );
+    }
+
+    #[test]
+    fn test_set_params_updates_filter() {
+        let mut filter = BiquadFilter::new(FilterType::Lowpass, 1000.0, 0.707, 48000.0);
+        let original_b0 = filter.coeffs().b0;
+
+        // Change to different frequency
+        filter.set_params(FilterType::Lowpass, 5000.0, 0.707);
+
+        // Coefficients should have changed
+        assert!(
+            (filter.coeffs().b0 - original_b0).abs() > 0.001,
+            "Coefficients didn't change after set_params"
+        );
+    }
+}
