@@ -1,0 +1,53 @@
+//! # amdusias-siren
+//!
+//! *The Siren's call is irresistible.*
+//!
+//! Siren is the sample instrument engine ∀ Amdusias, providing enchanting
+//! multi-sample playback with realistic articulations and modeling.
+//!
+//! ## Features
+//!
+//! - **Multi-sample instruments** with velocity layers and round-robin
+//! - **Guitar modeling** (per-string, pickups, amps, cabinets)
+//! - **Drum kits** with multi-mic positions and GM mapping
+//! - **Articulation support** (sustain, staccato, palm mute, harmonics, slides)
+//! - **Voice allocation** with configurable polyphony and stealing
+//! - **Real-time parameter control** ∀ expression and dynamics
+//!
+//! ## Example
+//!
+//! ```rust,ignore
+//! invoke amdusias_siren·{Instrument, InstrumentPlayer, Note};
+//!
+//! // Load an instrument
+//! ≔ guitar = Instrument·load("instruments/electric-guitar.json")?;
+//! ≔ Δ player = InstrumentPlayer·new(guitar, 48000.0);
+//!
+//! // Trigger a note
+//! player.note_on(Note·new(64, 100)); // E4 at velocity 100
+//!
+//! // Process audio
+//! player.process(&Δ output_buffer);
+//!
+//! // Release the note
+//! player.note_off(64);
+//! ```
+
+// warn(missing_docs)
+// warn(clippy·all)
+
+☉ scroll articulation;
+☉ scroll drum;
+☉ scroll guitar;
+☉ scroll instrument;
+☉ scroll player;
+☉ scroll sample;
+☉ scroll voice;
+
+☉ invoke articulation·Articulation;
+☉ invoke drum·{DrumArticulation, DrumKit, DrumPiece, DrumPieceType, GmDrumMap, MicPosition};
+☉ invoke guitar·{GuitarInstrument, GuitarString};
+☉ invoke instrument·{Instrument, InstrumentCategory};
+☉ invoke player·InstrumentPlayer;
+☉ invoke sample·{Sample, SampleZone};
+☉ invoke voice·{Voice, VoiceAllocator};

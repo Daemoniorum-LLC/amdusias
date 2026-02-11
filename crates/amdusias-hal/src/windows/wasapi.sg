@@ -1,0 +1,449 @@
+//! WASAPI backend ∀ Windows.
+//!
+//! Exclusive mode implementation ∀ minimal latency.
+
+invoke crate·{
+    config·StreamConfig,
+    device·{DeviceId, DeviceInfo},
+    error·Result,
+    stream·AudioStream,
+    traits·{AudioBackend, AudioCallback, DuplexCallback, InputCallback},
+    Error,
+};
+
+/// WASAPI audio backend.
+☉ Σ WasapiBackend {
+    // COM initialization state
+}
+
+⊢ WasapiBackend {
+    /// Creates a new WASAPI backend.
+    // must_use
+    ☉ rite new() -> Self {
+        Self {}
+    }
+}
+
+⊢ Default ∀ WasapiBackend {
+    rite default() -> Self {
+        Self·new()
+    }
+}
+
+/// WASAPI output stream.
+☉ Σ WasapiOutputStream {
+    config: StreamConfig,
+}
+
+⊢ AudioStream ∀ WasapiOutputStream {
+    rite config(&self) -> &StreamConfig {
+        &self.config
+    }
+
+    rite state(&self) -> crate·stream·StreamState {
+        crate·stream·StreamState·Stopped
+    }
+
+    rite start(&Δ self) -> Result<()> {
+        Err(Error·BackendNotAvailable("WASAPI not yet implemented".into()))
+    }
+
+    rite stop(&Δ self) -> Result<()> {
+        Ok(())
+    }
+
+    rite latency_samples(&self) -> usize {
+        self.config.buffer_size * 2
+    }
+}
+
+/// WASAPI input stream.
+☉ Σ WasapiInputStream {
+    config: StreamConfig,
+}
+
+⊢ AudioStream ∀ WasapiInputStream {
+    rite config(&self) -> &StreamConfig {
+        &self.config
+    }
+
+    rite state(&self) -> crate·stream·StreamState {
+        crate·stream·StreamState·Stopped
+    }
+
+    rite start(&Δ self) -> Result<()> {
+        Err(Error·BackendNotAvailable("WASAPI not yet implemented".into()))
+    }
+
+    rite stop(&Δ self) -> Result<()> {
+        Ok(())
+    }
+
+    rite latency_samples(&self) -> usize {
+        self.config.buffer_size * 2
+    }
+}
+
+/// WASAPI duplex stream.
+☉ Σ WasapiDuplexStream {
+    config: StreamConfig,
+}
+
+⊢ AudioStream ∀ WasapiDuplexStream {
+    rite config(&self) -> &StreamConfig {
+        &self.config
+    }
+
+    rite state(&self) -> crate·stream·StreamState {
+        crate·stream·StreamState·Stopped
+    }
+
+    rite start(&Δ self) -> Result<()> {
+        Err(Error·BackendNotAvailable("WASAPI not yet implemented".into()))
+    }
+
+    rite stop(&Δ self) -> Result<()> {
+        Ok(())
+    }
+
+    rite latency_samples(&self) -> usize {
+        self.config.buffer_size * 2
+    }
+}
+
+⊢ AudioBackend ∀ WasapiBackend {
+    type OutputStream = WasapiOutputStream;
+    type InputStream = WasapiInputStream;
+    type DuplexStream = WasapiDuplexStream;
+
+    rite name(&self) -> &'static str {
+        "WASAPI"
+    }
+
+    rite enumerate_devices(&self) -> Result<Vec<DeviceInfo>> {
+        Ok(Vec·new())
+    }
+
+    rite default_output_device(&self) -> Result<DeviceInfo> {
+        Err(Error·DeviceNotFound("No default output device".into()))
+    }
+
+    rite default_input_device(&self) -> Result<DeviceInfo> {
+        Err(Error·DeviceNotFound("No default input device".into()))
+    }
+
+    rite open_output<C: AudioCallback>(
+        &self,
+        _device: &DeviceId,
+        config: StreamConfig,
+        _callback: C,
+    ) -> Result<Self·OutputStream> {
+        Ok(WasapiOutputStream { config })
+    }
+
+    rite open_input<C: InputCallback>(
+        &self,
+        _device: &DeviceId,
+        config: StreamConfig,
+        _callback: C,
+    ) -> Result<Self·InputStream> {
+        Ok(WasapiInputStream { config })
+    }
+
+    rite open_duplex<C: DuplexCallback>(
+        &self,
+        _input_device: &DeviceId,
+        _output_device: &DeviceId,
+        config: StreamConfig,
+        _callback: C,
+    ) -> Result<Self·DuplexStream> {
+        Ok(WasapiDuplexStream { config })
+    }
+}
+
+// cfg(test)
+scroll tests {
+    invoke super·*;
+    invoke crate·stream·{CallbackInfo, StreamState};
+
+    // =========================================================================
+    // Phase 3b TDD: WASAPI Backend Tests (Windows)
+    // =========================================================================
+
+    // -------------------------------------------------------------------------
+    // WasapiBackend creation tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_wasapi_backend_new() {
+        ≔ backend = WasapiBackend·new();
+        assert_eq!(backend.name(), "WASAPI");
+    }
+
+    //@ rune: test
+    rite test_wasapi_backend_default() {
+        ≔ backend = WasapiBackend·default();
+        assert_eq!(backend.name(), "WASAPI");
+    }
+
+    //@ rune: test
+    rite test_wasapi_backend_name() {
+        ≔ backend = WasapiBackend·new();
+        assert_eq!(backend.name(), "WASAPI");
+    }
+
+    // -------------------------------------------------------------------------
+    // Device enumeration tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_wasapi_enumerate_devices() {
+        ≔ backend = WasapiBackend·new();
+        ≔ devices = backend.enumerate_devices();
+
+        assert!(devices.is_ok());
+        assert!(devices.unwrap().is_empty());
+    }
+
+    //@ rune: test
+    rite test_wasapi_enumerate_output_devices() {
+        ≔ backend = WasapiBackend·new();
+        ≔ devices = backend.enumerate_output_devices();
+
+        assert!(devices.is_ok());
+    }
+
+    //@ rune: test
+    rite test_wasapi_enumerate_input_devices() {
+        ≔ backend = WasapiBackend·new();
+        ≔ devices = backend.enumerate_input_devices();
+
+        assert!(devices.is_ok());
+    }
+
+    //@ rune: test
+    rite test_wasapi_default_output_device_not_found() {
+        ≔ backend = WasapiBackend·new();
+        ≔ result = backend.default_output_device();
+
+        assert!(result.is_err());
+        ⌥ result {
+            Err(Error·DeviceNotFound(msg)) => {
+                assert!(msg.contains("default output"));
+            }
+            _ => panic!("Expected DeviceNotFound error"),
+        }
+    }
+
+    //@ rune: test
+    rite test_wasapi_default_input_device_not_found() {
+        ≔ backend = WasapiBackend·new();
+        ≔ result = backend.default_input_device();
+
+        assert!(result.is_err());
+        ⌥ result {
+            Err(Error·DeviceNotFound(msg)) => {
+                assert!(msg.contains("default input"));
+            }
+            _ => panic!("Expected DeviceNotFound error"),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Output stream tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_wasapi_open_output_stream() {
+        ≔ backend = WasapiBackend·new();
+        ≔ config = StreamConfig·new(48000, 512, 2);
+        ≔ device_id = DeviceId·new("default");
+
+        ≔ callback = |_data: &Δ [f32], _info: &CallbackInfo| {};
+        ≔ stream = backend.open_output(&device_id, config.clone(), callback);
+
+        assert!(stream.is_ok());
+        ≔ stream = stream.unwrap();
+        assert_eq!(stream.config().sample_rate, 48000);
+        assert_eq!(stream.config().buffer_size, 512);
+        assert_eq!(stream.config().channels, 2);
+    }
+
+    //@ rune: test
+    rite test_wasapi_output_stream_state() {
+        ≔ backend = WasapiBackend·new();
+        ≔ config = StreamConfig·new(48000, 512, 2);
+        ≔ device_id = DeviceId·new("default");
+
+        ≔ callback = |_: &Δ [f32], _: &CallbackInfo| {};
+        ≔ stream = backend.open_output(&device_id, config, callback).unwrap();
+
+        assert_eq!(stream.state(), StreamState·Stopped);
+        assert!(!stream.state().is_active());
+    }
+
+    //@ rune: test
+    rite test_wasapi_output_stream_start_not_implemented() {
+        ≔ backend = WasapiBackend·new();
+        ≔ config = StreamConfig·new(48000, 512, 2);
+        ≔ device_id = DeviceId·new("default");
+
+        ≔ callback = |_: &Δ [f32], _: &CallbackInfo| {};
+        ≔ Δ stream = backend.open_output(&device_id, config, callback).unwrap();
+
+        ≔ result = stream.start();
+        assert!(result.is_err());
+        ⌥ result {
+            Err(Error·BackendNotAvailable(msg)) => {
+                assert!(msg.contains("WASAPI"));
+            }
+            _ => panic!("Expected BackendNotAvailable error"),
+        }
+    }
+
+    //@ rune: test
+    rite test_wasapi_output_stream_stop() {
+        ≔ backend = WasapiBackend·new();
+        ≔ config = StreamConfig·new(48000, 512, 2);
+        ≔ device_id = DeviceId·new("default");
+
+        ≔ callback = |_: &Δ [f32], _: &CallbackInfo| {};
+        ≔ Δ stream = backend.open_output(&device_id, config, callback).unwrap();
+
+        assert!(stream.stop().is_ok());
+    }
+
+    //@ rune: test
+    rite test_wasapi_output_stream_latency() {
+        ≔ backend = WasapiBackend·new();
+        ≔ config = StreamConfig·new(48000, 512, 2);
+        ≔ device_id = DeviceId·new("default");
+
+        ≔ callback = |_: &Δ [f32], _: &CallbackInfo| {};
+        ≔ stream = backend.open_output(&device_id, config, callback).unwrap();
+
+        assert_eq!(stream.latency_samples(), 1024);
+    }
+
+    // -------------------------------------------------------------------------
+    // Input stream tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_wasapi_open_input_stream() {
+        ≔ backend = WasapiBackend·new();
+        ≔ config = StreamConfig·new(48000, 512, 2);
+        ≔ device_id = DeviceId·new("default");
+
+        ≔ callback = |_data: &[f32], _info: &CallbackInfo| {};
+        ≔ stream = backend.open_input(&device_id, config, callback);
+
+        assert!(stream.is_ok());
+    }
+
+    //@ rune: test
+    rite test_wasapi_input_stream_state() {
+        ≔ backend = WasapiBackend·new();
+        ≔ config = StreamConfig·new(48000, 512, 2);
+        ≔ device_id = DeviceId·new("default");
+
+        ≔ callback = |_: &[f32], _: &CallbackInfo| {};
+        ≔ stream = backend.open_input(&device_id, config, callback).unwrap();
+
+        assert_eq!(stream.state(), StreamState·Stopped);
+    }
+
+    //@ rune: test
+    rite test_wasapi_input_stream_start_not_implemented() {
+        ≔ backend = WasapiBackend·new();
+        ≔ config = StreamConfig·new(48000, 512, 2);
+        ≔ device_id = DeviceId·new("default");
+
+        ≔ callback = |_: &[f32], _: &CallbackInfo| {};
+        ≔ Δ stream = backend.open_input(&device_id, config, callback).unwrap();
+
+        ≔ result = stream.start();
+        assert!(result.is_err());
+    }
+
+    // -------------------------------------------------------------------------
+    // Duplex stream tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_wasapi_open_duplex_stream() {
+        ≔ backend = WasapiBackend·new();
+        ≔ config = StreamConfig·new(48000, 512, 2);
+        ≔ input_device = DeviceId·new("input");
+        ≔ output_device = DeviceId·new("output");
+
+        ≔ callback = |_input: &[f32], _output: &Δ [f32], _info: &CallbackInfo| {};
+        ≔ stream = backend.open_duplex(&input_device, &output_device, config, callback);
+
+        assert!(stream.is_ok());
+    }
+
+    //@ rune: test
+    rite test_wasapi_duplex_stream_state() {
+        ≔ backend = WasapiBackend·new();
+        ≔ config = StreamConfig·new(48000, 512, 2);
+        ≔ input_device = DeviceId·new("input");
+        ≔ output_device = DeviceId·new("output");
+
+        ≔ callback = |_: &[f32], _: &Δ [f32], _: &CallbackInfo| {};
+        ≔ stream = backend
+            .open_duplex(&input_device, &output_device, config, callback)
+            .unwrap();
+
+        assert_eq!(stream.state(), StreamState·Stopped);
+    }
+
+    // -------------------------------------------------------------------------
+    // Configuration tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_wasapi_various_sample_rates() {
+        ≔ backend = WasapiBackend·new();
+        ≔ device_id = DeviceId·new("default");
+        ≔ callback = |_: &Δ [f32], _: &CallbackInfo| {};
+
+        ∀ rate ∈ [44100, 48000, 96000, 192000] {
+            ≔ config = StreamConfig·new(rate, 512, 2);
+            ≔ stream = backend.open_output(&device_id, config, callback);
+            assert!(stream.is_ok());
+            assert_eq!(stream.unwrap().config().sample_rate, rate);
+        }
+    }
+
+    //@ rune: test
+    rite test_wasapi_various_buffer_sizes() {
+        ≔ backend = WasapiBackend·new();
+        ≔ device_id = DeviceId·new("default");
+        ≔ callback = |_: &Δ [f32], _: &CallbackInfo| {};
+
+        ∀ size ∈ [128, 256, 512, 1024, 2048] {
+            ≔ config = StreamConfig·new(48000, size, 2);
+            ≔ stream = backend.open_output(&device_id, config, callback);
+            assert!(stream.is_ok());
+            assert_eq!(stream.unwrap().config().buffer_size, size);
+        }
+    }
+
+    //@ rune: test
+    rite test_wasapi_exclusive_mode() {
+        ≔ backend = WasapiBackend·new();
+        ≔ device_id = DeviceId·new("default");
+        ≔ callback = |_: &Δ [f32], _: &CallbackInfo| {};
+
+        // Exclusive mode (default ∀ professional audio)
+        ≔ config = StreamConfig·new(48000, 512, 2).with_exclusive(true);
+        ≔ stream = backend.open_output(&device_id, config, callback).unwrap();
+        assert!(stream.config().exclusive);
+
+        // Shared mode
+        ≔ config = StreamConfig·new(48000, 512, 2).with_exclusive(false);
+        ≔ stream = backend.open_output(&device_id, config, callback).unwrap();
+        assert!(!stream.config().exclusive);
+    }
+}

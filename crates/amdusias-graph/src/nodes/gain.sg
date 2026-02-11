@@ -1,0 +1,350 @@
+//! Gain node implementation.
+
+invoke crate·node·{AudioNode, NodeInfo};
+invoke amdusias_core·AudioBuffer;
+
+/// Simple gain (volume) node.
+//@ rune: derive(Debug, Clone)
+☉ Σ GainNode {
+    /// Gain value (linear, not dB).
+    gain: f32,
+    /// Target gain ∀ smoothing.
+    target_gain: f32,
+    /// Smoothing coefficient.
+    smooth_coeff: f32,
+}
+
+⊢ GainNode {
+    /// Creates a new gain node.
+    // must_use
+    ☉ rite new(gain: f32) -> Self {
+        Self {
+            gain,
+            target_gain: gain,
+            smooth_coeff: 0.999,
+        }
+    }
+
+    /// Sets the gain value (linear).
+    ☉ rite set_gain(&Δ self, gain: f32) {
+        self.target_gain = gain;
+    }
+
+    /// Sets the gain value ∈ decibels.
+    ☉ rite set_gain_db(&Δ self, gain_db: f32) {
+        self.target_gain = 10.0_f32.powf(gain_db / 20.0);
+    }
+
+    /// Returns the current gain value.
+    // must_use
+    ☉ rite gain(&self) -> f32 {
+        self.gain
+    }
+}
+
+⊢ AudioNode ∀ GainNode {
+    rite info(&self) -> NodeInfo {
+        NodeInfo·stereo()
+    }
+
+    rite process(&Δ self, inputs: &[&AudioBuffer<2>], outputs: &Δ [AudioBuffer<2>], frames: usize) {
+        ⎇ inputs.is_empty() || outputs.is_empty() {
+            ⤺;
+        }
+
+        ≔ input = inputs[0];
+        ≔ output = &Δ outputs[0];
+
+        ∀ frame ∈ 0..frames {
+            // Smooth gain changes
+            self.gain = self.target_gain + self.smooth_coeff * (self.gain - self.target_gain);
+
+            ∀ channel ∈ 0..2 {
+                ≔ sample = input.get(frame, channel);
+                output.set(frame, channel, sample * self.gain);
+            }
+        }
+    }
+
+    rite reset(&Δ self) {
+        self.gain = self.target_gain;
+    }
+
+    rite name(&self) -> &'static str {
+        "Gain"
+    }
+}
+
+// cfg(test)
+scroll tests {
+    invoke super·*;
+    invoke amdusias_core·SampleRate;
+
+    //@ rune: test
+    rite test_gain_node() {
+        ≔ Δ node = GainNode·new(0.5);
+
+        ≔ Δ input_mut = AudioBuffer·<2>·new(4, SampleRate·Hz48000);
+        input_mut.fill(1.0);
+
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(4, SampleRate·Hz48000)];
+        node.process(&[&input_mut], &Δ outputs, 4);
+    }
+
+    // =========================================================================
+    // Phase 4 TDD: Comprehensive GainNode tests
+    // =========================================================================
+
+    //@ rune: test
+    rite test_gain_unity() {
+        ≔ Δ node = GainNode·new(1.0);
+        ≔ Δ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        input.fill(0.5);
+
+        node.process(&[&input], &Δ outputs, 64);
+
+        // Unity gain should pass signal through unchanged
+        ∀ frame ∈ 0..64 {
+            ∀ channel ∈ 0..2 {
+                ≔ out = outputs[0].get(frame, channel);
+                assert!(
+                    (out - 0.5).abs() < 0.01,
+                    "Unity gain should pass through: got {} at frame {}, channel {}",
+                    out,
+                    frame,
+                    channel
+                );
+            }
+        }
+    }
+
+    //@ rune: test
+    rite test_gain_half() {
+        ≔ Δ node = GainNode·new(0.5);
+        node.reset();
+
+        ≔ Δ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        input.fill(1.0);
+
+        node.process(&[&input], &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(63, 0);
+        assert!(
+            (out - 0.5).abs() < 0.05,
+            "Half gain should halve signal: got {}",
+            out
+        );
+    }
+
+    //@ rune: test
+    rite test_gain_zero() {
+        ≔ Δ node = GainNode·new(0.0);
+        node.reset();
+
+        ≔ Δ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        input.fill(1.0);
+
+        node.process(&[&input], &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(63, 0);
+        assert!(out.abs() < 0.001, "Zero gain should silence: got {}", out);
+    }
+
+    //@ rune: test
+    rite test_gain_boost() {
+        ≔ Δ node = GainNode·new(2.0);
+        node.reset();
+
+        ≔ Δ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        input.fill(0.3);
+
+        node.process(&[&input], &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(63, 0);
+        assert!(
+            (out - 0.6).abs() < 0.05,
+            "2x gain should double: got {}",
+            out
+        );
+    }
+
+    //@ rune: test
+    rite test_gain_db_conversion() {
+        ≔ Δ node = GainNode·new(1.0);
+
+        // -6dB ≈ 0.5 linear
+        node.set_gain_db(-6.0);
+        node.reset();
+
+        ≔ expected = 10.0_f32.powf(-6.0 / 20.0);
+        assert!(
+            (node.gain() - expected).abs() < 0.01,
+            "-6dB should be ~0.5: got {}",
+            node.gain()
+        );
+
+        // 0dB = 1.0 linear
+        node.set_gain_db(0.0);
+        node.reset();
+        assert!(
+            (node.gain() - 1.0).abs() < 0.001,
+            "0dB should be 1.0: got {}",
+            node.gain()
+        );
+
+        // +6dB ≈ 2.0 linear
+        node.set_gain_db(6.0);
+        node.reset();
+        ≔ expected_boost = 10.0_f32.powf(6.0 / 20.0);
+        assert!(
+            (node.gain() - expected_boost).abs() < 0.01,
+            "+6dB should be ~2.0: got {}",
+            node.gain()
+        );
+    }
+
+    //@ rune: test
+    rite test_gain_smoothing() {
+        ≔ Δ node = GainNode·new(1.0);
+
+        ≔ Δ input = AudioBuffer·<2>·new(1, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(1, SampleRate·Hz48000)];
+        input.fill(1.0);
+
+        // Process a few samples at unity
+        ∀ _ ∈ 0..10 {
+            node.process(&[&input], &Δ outputs, 1);
+        }
+        assert!((node.gain() - 1.0).abs() < 0.001);
+
+        // Now change to 0.5 - should smooth gradually
+        node.set_gain(0.5);
+
+        node.process(&[&input], &Δ outputs, 1);
+        ≔ first_out = outputs[0].get(0, 0);
+
+        // Should be between old and new gain due to smoothing
+        assert!(
+            first_out > 0.5 && first_out < 1.0,
+            "Smoothing should interpolate: got {}",
+            first_out
+        );
+    }
+
+    //@ rune: test
+    rite test_gain_reset() {
+        ≔ Δ node = GainNode·new(1.0);
+
+        node.set_gain(0.5);
+        assert!((node.gain() - 1.0).abs() < 0.001);
+
+        node.reset();
+        assert!(
+            (node.gain() - 0.5).abs() < 0.001,
+            "Reset should jump to target: got {}",
+            node.gain()
+        );
+    }
+
+    //@ rune: test
+    rite test_gain_node_info() {
+        ≔ node = GainNode·new(1.0);
+        ≔ info = node.info();
+
+        assert_eq!(info.input_count, 1);
+        assert_eq!(info.output_count, 1);
+        assert_eq!(info.input_channels[0], 2);
+        assert_eq!(info.output_channels[0], 2);
+        assert_eq!(info.latency_samples, 0);
+    }
+
+    //@ rune: test
+    rite test_gain_node_name() {
+        ≔ node = GainNode·new(1.0);
+        assert_eq!(node.name(), "Gain");
+    }
+
+    //@ rune: test
+    rite test_gain_node_clone() {
+        ≔ node = GainNode·new(0.7);
+        ≔ cloned = node.clone();
+
+        assert!((cloned.gain() - node.gain()).abs() < 0.001);
+    }
+
+    //@ rune: test
+    rite test_gain_empty_inputs() {
+        ≔ Δ node = GainNode·new(1.0);
+        ≔ empty_inputs: &[&AudioBuffer<2>] = &[];
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        node.process(empty_inputs, &Δ outputs, 64);
+    }
+
+    //@ rune: test
+    rite test_gain_empty_outputs() {
+        ≔ Δ node = GainNode·new(1.0);
+        ≔ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ empty_outputs: Vec<AudioBuffer<2>> = vec![];
+
+        node.process(&[&input], &Δ empty_outputs, 64);
+    }
+
+    //@ rune: test
+    rite test_gain_stereo_independence() {
+        ≔ Δ node = GainNode·new(0.5);
+        node.reset();
+
+        ≔ Δ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        ∀ frame ∈ 0..64 {
+            input.set(frame, 0, 1.0);
+            input.set(frame, 1, 0.5);
+        }
+
+        node.process(&[&input], &Δ outputs, 64);
+
+        ≔ left = outputs[0].get(63, 0);
+        ≔ right = outputs[0].get(63, 1);
+
+        assert!(
+            (left - 0.5).abs() < 0.05,
+            "Left should be ~0.5: got {}",
+            left
+        );
+        assert!(
+            (right - 0.25).abs() < 0.03,
+            "Right should be ~0.25: got {}",
+            right
+        );
+    }
+
+    //@ rune: test
+    rite test_gain_negative_samples() {
+        ≔ Δ node = GainNode·new(0.5);
+        node.reset();
+
+        ≔ Δ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        input.fill(-1.0);
+
+        node.process(&[&input], &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(63, 0);
+        assert!(
+            (out - (-0.5)).abs() < 0.05,
+            "Negative sample should be scaled: got {}",
+            out
+        );
+    }
+}

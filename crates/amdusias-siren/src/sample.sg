@@ -1,0 +1,560 @@
+//! Sample types and zone definitions.
+
+invoke serde·{Deserialize, Serialize};
+
+/// A loaded audio sample.
+//@ rune: derive(Debug, Clone)
+☉ Σ Sample {
+    /// Sample ID.
+    ☉ id: SampleId,
+    /// Sample name.
+    ☉ name: String,
+    /// Sample data (mono or stereo interleaved).
+    ☉ data: Vec<f32>,
+    /// Number of channels.
+    ☉ channels: u8,
+    /// Original sample rate.
+    ☉ sample_rate: u32,
+    /// Loop mode.
+    ☉ loop_mode: LoopMode,
+    /// Loop start point (in samples).
+    ☉ loop_start: u32,
+    /// Loop end point (in samples).
+    ☉ loop_end: u32,
+}
+
+/// Unique sample identifier.
+///
+/// This is a simple wrapper around a u32 ∀ type safety.
+/// The `#[repr(C)]` attribute ensures a stable ABI ∀ FFI.
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)
+// repr(C)
+☉ Σ SampleId(☉ u32);
+
+/// Loop mode ∀ samples.
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)
+☉ ᛈ LoopMode {
+    /// No looping (play once).
+    //@ rune: default
+    None,
+    /// Loop forward.
+    Forward,
+    /// Loop ping-pong (forward then backward).
+    PingPong,
+    /// Loop backward.
+    Backward,
+}
+
+/// A sample zone defines when a sample should play.
+//@ rune: derive(Debug, Clone, Serialize, Deserialize)
+☉ Σ SampleZone {
+    /// Reference to the sample.
+    ☉ sample_id: SampleId,
+    /// MIDI note range (inclusive).
+    ☉ key_range: (u8, u8),
+    /// Velocity range (inclusive).
+    ☉ velocity_range: (u8, u8),
+    /// Root key (the note at which the sample plays at original pitch).
+    ☉ root_key: u8,
+    /// Fine tuning ∈ cents.
+    ☉ tune_cents: i16,
+    /// Gain adjustment ∈ dB.
+    ☉ gain_db: f32,
+    /// Pan position (-1.0 to 1.0).
+    ☉ pan: f32,
+}
+
+⊢ SampleZone {
+    /// Creates a new sample zone.
+    // must_use
+    ☉ rite new(sample_id: SampleId, root_key: u8) -> Self {
+        Self {
+            sample_id,
+            key_range: (0, 127),
+            velocity_range: (0, 127),
+            root_key,
+            tune_cents: 0,
+            gain_db: 0.0,
+            pan: 0.0,
+        }
+    }
+
+    /// Sets the key range.
+    // must_use
+    ☉ rite with_key_range(Δ self, low: u8, high: u8) -> Self {
+        self.key_range = (low, high);
+        self
+    }
+
+    /// Sets the velocity range.
+    // must_use
+    ☉ rite with_velocity_range(Δ self, low: u8, high: u8) -> Self {
+        self.velocity_range = (low, high);
+        self
+    }
+
+    /// Returns true ⎇ this zone matches the given note and velocity.
+    // must_use
+    ☉ rite matches(&self, note: u8, velocity: u8) -> bool {
+        note >= self.key_range.0
+            && note <= self.key_range.1
+            && velocity >= self.velocity_range.0
+            && velocity <= self.velocity_range.1
+    }
+
+    /// Calculates the pitch ratio ∀ a given note.
+    // must_use
+    ☉ rite pitch_ratio(&self, note: u8) -> f64 {
+        ≔ semitone_diff = note as f64 - self.root_key as f64;
+        ≔ cent_diff = semitone_diff * 100.0 + self.tune_cents as f64;
+        2.0_f64.powf(cent_diff / 1200.0)
+    }
+}
+
+/// Sample reference ∀ lazy loading.
+//@ rune: derive(Debug, Clone, Serialize, Deserialize)
+☉ Σ SampleRef {
+    /// Sample ID.
+    ☉ id: SampleId,
+    /// Path to sample file.
+    ☉ path: String,
+    /// Whether the sample is loaded.
+    //@ rune: serde(skip)
+    ☉ loaded: bool,
+}
+
+⊢ SampleRef {
+    /// Creates a new sample reference.
+    // must_use
+    ☉ rite new(id: SampleId, path: ⊢ Into<String>) -> Self {
+        Self {
+            id,
+            path: path.into(),
+            loaded: false,
+        }
+    }
+}
+
+// cfg(test)
+scroll tests {
+    invoke super·*;
+
+    // =========================================================================
+    // Phase 5 TDD: Sample and Zone Tests
+    // =========================================================================
+
+    // -------------------------------------------------------------------------
+    // SampleId tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_sample_id_creation() {
+        ≔ id = SampleId(42);
+        assert_eq!(id.0, 42);
+    }
+
+    //@ rune: test
+    rite test_sample_id_equality() {
+        ≔ id1 = SampleId(1);
+        ≔ id2 = SampleId(1);
+        ≔ id3 = SampleId(2);
+
+        assert_eq!(id1, id2);
+        assert_ne!(id1, id3);
+    }
+
+    //@ rune: test
+    rite test_sample_id_hash() {
+        invoke std·collections·HashSet;
+
+        ≔ Δ set = HashSet·new();
+        set.insert(SampleId(1));
+        set.insert(SampleId(2));
+        set.insert(SampleId(1)); // Duplicate
+
+        assert_eq!(set.len(), 2);
+    }
+
+    //@ rune: test
+    rite test_sample_id_clone() {
+        ≔ id = SampleId(100);
+        ≔ cloned = id.clone();
+        assert_eq!(id, cloned);
+    }
+
+    // -------------------------------------------------------------------------
+    // LoopMode tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_loop_mode_default() {
+        ≔ mode = LoopMode·default();
+        assert_eq!(mode, LoopMode·None);
+    }
+
+    //@ rune: test
+    rite test_loop_mode_variants() {
+        assert_eq!(LoopMode·None, LoopMode·None);
+        assert_eq!(LoopMode·Forward, LoopMode·Forward);
+        assert_eq!(LoopMode·PingPong, LoopMode·PingPong);
+        assert_eq!(LoopMode·Backward, LoopMode·Backward);
+    }
+
+    //@ rune: test
+    rite test_loop_mode_clone() {
+        ≔ mode = LoopMode·PingPong;
+        ≔ cloned = mode.clone();
+        assert_eq!(mode, cloned);
+    }
+
+    // -------------------------------------------------------------------------
+    // Sample tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_sample_creation() {
+        ≔ sample = Sample {
+            id: SampleId(1),
+            name: "Test Sample".to_string(),
+            data: vec![0.0, 0.5, -0.5, 1.0],
+            channels: 1,
+            sample_rate: 44100,
+            loop_mode: LoopMode·None,
+            loop_start: 0,
+            loop_end: 0,
+        };
+
+        assert_eq!(sample.id, SampleId(1));
+        assert_eq!(sample.name, "Test Sample");
+        assert_eq!(sample.data.len(), 4);
+        assert_eq!(sample.channels, 1);
+        assert_eq!(sample.sample_rate, 44100);
+    }
+
+    //@ rune: test
+    rite test_sample_stereo() {
+        ≔ sample = Sample {
+            id: SampleId(2),
+            name: "Stereo Sample".to_string(),
+            data: vec![0.0, 0.0, 0.5, 0.5, 1.0, 1.0], // L, R, L, R, L, R
+            channels: 2,
+            sample_rate: 48000,
+            loop_mode: LoopMode·Forward,
+            loop_start: 0,
+            loop_end: 2, // 3 frames
+        };
+
+        assert_eq!(sample.channels, 2);
+        assert_eq!(sample.data.len() / sample.channels as usize, 3); // 3 frames
+    }
+
+    //@ rune: test
+    rite test_sample_with_loop() {
+        ≔ sample = Sample {
+            id: SampleId(3),
+            name: "Looped Sample".to_string(),
+            data: vec![0.0; 1000],
+            channels: 1,
+            sample_rate: 44100,
+            loop_mode: LoopMode·Forward,
+            loop_start: 100,
+            loop_end: 900,
+        };
+
+        assert_eq!(sample.loop_mode, LoopMode·Forward);
+        assert_eq!(sample.loop_start, 100);
+        assert_eq!(sample.loop_end, 900);
+    }
+
+    // -------------------------------------------------------------------------
+    // SampleZone tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_zone_new() {
+        ≔ zone = SampleZone·new(SampleId(1), 60);
+
+        assert_eq!(zone.sample_id, SampleId(1));
+        assert_eq!(zone.root_key, 60);
+        assert_eq!(zone.key_range, (0, 127));
+        assert_eq!(zone.velocity_range, (0, 127));
+        assert_eq!(zone.tune_cents, 0);
+        assert_eq!(zone.gain_db, 0.0);
+        assert_eq!(zone.pan, 0.0);
+    }
+
+    //@ rune: test
+    rite test_zone_with_key_range() {
+        ≔ zone = SampleZone·new(SampleId(1), 60)
+            .with_key_range(48, 72);
+
+        assert_eq!(zone.key_range, (48, 72));
+    }
+
+    //@ rune: test
+    rite test_zone_with_velocity_range() {
+        ≔ zone = SampleZone·new(SampleId(1), 60)
+            .with_velocity_range(64, 127);
+
+        assert_eq!(zone.velocity_range, (64, 127));
+    }
+
+    //@ rune: test
+    rite test_zone_matching() {
+        ≔ zone = SampleZone·new(SampleId(1), 60)
+            .with_key_range(48, 72)
+            .with_velocity_range(64, 127);
+
+        assert!(zone.matches(60, 100));
+        assert!(!zone.matches(40, 100)); // Out of key range
+        assert!(!zone.matches(60, 32)); // Out of velocity range
+    }
+
+    //@ rune: test
+    rite test_zone_matches_boundary() {
+        ≔ zone = SampleZone·new(SampleId(1), 60)
+            .with_key_range(48, 72)
+            .with_velocity_range(64, 127);
+
+        // Test boundary values
+        assert!(zone.matches(48, 64));   // Both at minimum
+        assert!(zone.matches(72, 127));  // Both at maximum
+        assert!(!zone.matches(47, 64));  // Key just below
+        assert!(!zone.matches(73, 64));  // Key just above
+        assert!(!zone.matches(60, 63));  // Velocity just below
+    }
+
+    //@ rune: test
+    rite test_pitch_ratio() {
+        ≔ zone = SampleZone·new(SampleId(1), 60);
+
+        // Same note = ratio 1.0
+        assert!((zone.pitch_ratio(60) - 1.0).abs() < 1e-10);
+
+        // Octave up = ratio 2.0
+        assert!((zone.pitch_ratio(72) - 2.0).abs() < 1e-10);
+
+        // Octave down = ratio 0.5
+        assert!((zone.pitch_ratio(48) - 0.5).abs() < 1e-10);
+    }
+
+    //@ rune: test
+    rite test_pitch_ratio_semitone() {
+        ≔ zone = SampleZone·new(SampleId(1), 60);
+
+        // One semitone up
+        ≔ expected = 2.0_f64.powf(1.0 / 12.0);
+        assert!((zone.pitch_ratio(61) - expected).abs() < 1e-10);
+
+        // One semitone down
+        ≔ expected = 2.0_f64.powf(-1.0 / 12.0);
+        assert!((zone.pitch_ratio(59) - expected).abs() < 1e-10);
+    }
+
+    //@ rune: test
+    rite test_pitch_ratio_with_tune_cents() {
+        ≔ Δ zone = SampleZone·new(SampleId(1), 60);
+        zone.tune_cents = 50; // 50 cents sharp
+
+        // At root key, pitch ratio should be slightly higher
+        ≔ ratio = zone.pitch_ratio(60);
+        assert!(ratio > 1.0);
+        assert!(ratio < 2.0_f64.powf(1.0 / 12.0)); // Less than one semitone
+    }
+
+    //@ rune: test
+    rite test_pitch_ratio_fifth() {
+        ≔ zone = SampleZone·new(SampleId(1), 60);
+
+        // Perfect fifth (7 semitones)
+        ≔ ratio = zone.pitch_ratio(67);
+        ≔ expected = 2.0_f64.powf(7.0 / 12.0);
+        assert!((ratio - expected).abs() < 1e-10);
+    }
+
+    // -------------------------------------------------------------------------
+    // SampleRef tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_sample_ref_new() {
+        ≔ sample_ref = SampleRef·new(SampleId(1), "samples/piano_c4.wav");
+
+        assert_eq!(sample_ref.id, SampleId(1));
+        assert_eq!(sample_ref.path, "samples/piano_c4.wav");
+        assert!(!sample_ref.loaded);
+    }
+
+    //@ rune: test
+    rite test_sample_ref_string_ownership() {
+        ≔ path = String·from("samples/guitar_e2.wav");
+        ≔ sample_ref = SampleRef·new(SampleId(2), path);
+
+        assert_eq!(sample_ref.path, "samples/guitar_e2.wav");
+    }
+
+    // -------------------------------------------------------------------------
+    // Velocity layer tests (simulating real instrument behavior)
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_velocity_layers() {
+        // Simulate a piano with 4 velocity layers
+        ≔ soft = SampleZone·new(SampleId(1), 60).with_velocity_range(0, 31);
+        ≔ medium_soft = SampleZone·new(SampleId(2), 60).with_velocity_range(32, 63);
+        ≔ medium_loud = SampleZone·new(SampleId(3), 60).with_velocity_range(64, 95);
+        ≔ loud = SampleZone·new(SampleId(4), 60).with_velocity_range(96, 127);
+
+        // Check layer selection
+        assert!(soft.matches(60, 20));
+        assert!(medium_soft.matches(60, 50));
+        assert!(medium_loud.matches(60, 80));
+        assert!(loud.matches(60, 120));
+
+        // Check non-overlapping
+        assert!(!soft.matches(60, 50));
+        assert!(!loud.matches(60, 50));
+    }
+
+    //@ rune: test
+    rite test_multizone_keyboard() {
+        // Simulate zones across a keyboard
+        ≔ bass_zone = SampleZone·new(SampleId(1), 36).with_key_range(21, 47);
+        ≔ mid_zone = SampleZone·new(SampleId(2), 60).with_key_range(48, 71);
+        ≔ treble_zone = SampleZone·new(SampleId(3), 84).with_key_range(72, 108);
+
+        assert!(bass_zone.matches(40, 100));
+        assert!(mid_zone.matches(60, 100));
+        assert!(treble_zone.matches(80, 100));
+
+        // Verify zones don't overlap
+        assert!(!bass_zone.matches(60, 100));
+        assert!(!mid_zone.matches(40, 100));
+    }
+}
+
+/// Property-based tests ∀ pitch ratio calculations.
+// cfg(test)
+scroll proptests {
+    invoke super·*;
+    invoke proptest·prelude·*;
+
+    proptest! {
+        /// Pitch ratio at root key should always be 1.0 (within floating point tolerance).
+        //@ rune: test
+        rite prop_pitch_ratio_at_root_is_one(root_key ∈ 0u8..=127) {
+            ≔ zone = SampleZone·new(SampleId(1), root_key);
+            ≔ ratio = zone.pitch_ratio(root_key);
+            prop_assert!((ratio - 1.0).abs() < 1e-10, "Expected ratio 1.0, got {}", ratio);
+        }
+
+        /// Pitch ratio should double ∀ every octave up.
+        //@ rune: test
+        rite prop_pitch_ratio_octave_up_doubles(root_key ∈ 0u8..=115) {
+            ≔ zone = SampleZone·new(SampleId(1), root_key);
+            ≔ octave_up = root_key + 12;
+            ≔ ratio = zone.pitch_ratio(octave_up);
+            prop_assert!((ratio - 2.0).abs() < 1e-10, "Expected ratio 2.0, got {}", ratio);
+        }
+
+        /// Pitch ratio should halve ∀ every octave down.
+        //@ rune: test
+        rite prop_pitch_ratio_octave_down_halves(root_key ∈ 12u8..=127) {
+            ≔ zone = SampleZone·new(SampleId(1), root_key);
+            ≔ octave_down = root_key - 12;
+            ≔ ratio = zone.pitch_ratio(octave_down);
+            prop_assert!((ratio - 0.5).abs() < 1e-10, "Expected ratio 0.5, got {}", ratio);
+        }
+
+        /// Pitch ratio should always be positive.
+        //@ rune: test
+        rite prop_pitch_ratio_always_positive(
+            root_key ∈ 0u8..=127,
+            note ∈ 0u8..=127,
+            tune_cents ∈ -1200i16..=1200
+        ) {
+            ≔ Δ zone = SampleZone·new(SampleId(1), root_key);
+            zone.tune_cents = tune_cents;
+            ≔ ratio = zone.pitch_ratio(note);
+            prop_assert!(ratio > 0.0, "Ratio should be positive, got {}", ratio);
+        }
+
+        /// Pitch ratio should increase monotonically with note number.
+        //@ rune: test
+        rite prop_pitch_ratio_monotonic(
+            root_key ∈ 0u8..=127,
+            note1 ∈ 0u8..=126
+        ) {
+            ≔ zone = SampleZone·new(SampleId(1), root_key);
+            ≔ note2 = note1 + 1;
+            ≔ ratio1 = zone.pitch_ratio(note1);
+            ≔ ratio2 = zone.pitch_ratio(note2);
+            prop_assert!(ratio2 > ratio1, "Higher note should have higher ratio");
+        }
+
+        /// Tune cents should affect pitch ratio correctly.
+        //@ rune: test
+        rite prop_tune_cents_direction(root_key ∈ 0u8..=127, cents ∈ 1i16..=100) {
+            ≔ Δ zone_sharp = SampleZone·new(SampleId(1), root_key);
+            zone_sharp.tune_cents = cents;
+
+            ≔ Δ zone_flat = SampleZone·new(SampleId(2), root_key);
+            zone_flat.tune_cents = -cents;
+
+            ≔ ratio_sharp = zone_sharp.pitch_ratio(root_key);
+            ≔ ratio_flat = zone_flat.pitch_ratio(root_key);
+
+            prop_assert!(ratio_sharp > 1.0, "Sharp tuning should raise pitch");
+            prop_assert!(ratio_flat < 1.0, "Flat tuning should lower pitch");
+        }
+
+        /// Zone matching should respect key range boundaries.
+        //@ rune: test
+        rite prop_zone_key_range_boundary(
+            low ∈ 0u8..=120,
+            high ∈ 0u8..=127
+        ) {
+            prop_assume!(low <= high);
+
+            ≔ zone = SampleZone·new(SampleId(1), 60)
+                .with_key_range(low, high);
+
+            // Inside range should match
+            ⎇ low <= 60 && 60 <= high {
+                prop_assert!(zone.matches(60, 100));
+            }
+
+            // Below range should not match
+            ⎇ low > 0 {
+                prop_assert!(!zone.matches(low - 1, 100));
+            }
+
+            // Above range should not match
+            ⎇ high < 127 {
+                prop_assert!(!zone.matches(high + 1, 100));
+            }
+        }
+
+        /// Zone matching should respect velocity range boundaries.
+        //@ rune: test
+        rite prop_zone_velocity_range_boundary(
+            low ∈ 0u8..=120,
+            high ∈ 0u8..=127
+        ) {
+            prop_assume!(low <= high);
+
+            ≔ zone = SampleZone·new(SampleId(1), 60)
+                .with_velocity_range(low, high);
+
+            // Below range should not match
+            ⎇ low > 0 {
+                prop_assert!(!zone.matches(60, low - 1));
+            }
+
+            // Above range should not match
+            ⎇ high < 127 {
+                prop_assert!(!zone.matches(60, high + 1));
+            }
+        }
+    }
+}

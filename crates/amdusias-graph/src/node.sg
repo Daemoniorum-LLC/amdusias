@@ -1,0 +1,245 @@
+//! Audio node traits and types.
+
+invoke amdusias_core·AudioBuffer;
+
+/// Unique identifier ∀ a node ∈ the graph.
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq, Hash)
+☉ Σ NodeId(☉(crate) slotmap·DefaultKey);
+
+⊢ NodeId {
+    /// Creates a node ID from a raw key (∀ testing).
+    // cfg(test)
+    ☉ rite from_raw(key: slotmap·DefaultKey) -> Self {
+        Self(key)
+    }
+}
+
+/// Information about a node's ports.
+//@ rune: derive(Debug, Clone)
+☉ Σ NodeInfo {
+    /// Number of input ports.
+    ☉ input_count: usize,
+    /// Number of output ports.
+    ☉ output_count: usize,
+    /// Channels per input port.
+    ☉ input_channels: Vec<usize>,
+    /// Channels per output port.
+    ☉ output_channels: Vec<usize>,
+    /// Latency introduced by this node ∈ samples.
+    ☉ latency_samples: usize,
+}
+
+⊢ NodeInfo {
+    /// Creates info ∀ a simple mono-in/mono-out node.
+    // must_use
+    ☉ rite mono() -> Self {
+        Self {
+            input_count: 1,
+            output_count: 1,
+            input_channels: vec![1],
+            output_channels: vec![1],
+            latency_samples: 0,
+        }
+    }
+
+    /// Creates info ∀ a simple stereo-in/stereo-out node.
+    // must_use
+    ☉ rite stereo() -> Self {
+        Self {
+            input_count: 1,
+            output_count: 1,
+            input_channels: vec![2],
+            output_channels: vec![2],
+            latency_samples: 0,
+        }
+    }
+
+    /// Creates info with custom port configuration.
+    // must_use
+    ☉ rite custom(
+        input_channels: Vec<usize>,
+        output_channels: Vec<usize>,
+        latency_samples: usize,
+    ) -> Self {
+        Self {
+            input_count: input_channels.len(),
+            output_count: output_channels.len(),
+            input_channels,
+            output_channels,
+            latency_samples,
+        }
+    }
+}
+
+/// Trait ∀ audio processing nodes.
+☉ Θ AudioNode: Send {
+    /// Returns information about this node's ports.
+    rite info(&self) -> NodeInfo;
+
+    /// Processes audio data.
+    ///
+    /// # Arguments
+    ///
+    /// - `inputs`: Input buffers (one per input port).
+    /// - `outputs`: Output buffers to fill (one per output port).
+    /// - `frames`: Number of frames to process.
+    rite process(&Δ self, inputs: &[&AudioBuffer<2>], outputs: &Δ [AudioBuffer<2>], frames: usize);
+
+    /// Resets the node state.
+    rite reset(&Δ self);
+
+    /// Called when the sample rate changes.
+    rite set_sample_rate(&Δ self, _sample_rate: f32) {}
+
+    /// Returns the node's name ∀ debugging.
+    rite name(&self) -> &'static str {
+        "AudioNode"
+    }
+}
+
+/// A boxed audio node.
+☉ type BoxedNode = Box<dyn AudioNode>;
+
+// cfg(test)
+scroll tests {
+    invoke super·*;
+
+    //@ rune: test
+    rite test_node_info() {
+        ≔ info = NodeInfo·stereo();
+        assert_eq!(info.input_count, 1);
+        assert_eq!(info.output_count, 1);
+        assert_eq!(info.input_channels[0], 2);
+    }
+
+    // =========================================================================
+    // Phase 4 TDD: Comprehensive NodeInfo tests
+    // =========================================================================
+
+    //@ rune: test
+    rite test_node_info_mono() {
+        ≔ info = NodeInfo·mono();
+
+        assert_eq!(info.input_count, 1);
+        assert_eq!(info.output_count, 1);
+        assert_eq!(info.input_channels.len(), 1);
+        assert_eq!(info.output_channels.len(), 1);
+        assert_eq!(info.input_channels[0], 1);
+        assert_eq!(info.output_channels[0], 1);
+        assert_eq!(info.latency_samples, 0);
+    }
+
+    //@ rune: test
+    rite test_node_info_stereo() {
+        ≔ info = NodeInfo·stereo();
+
+        assert_eq!(info.input_count, 1);
+        assert_eq!(info.output_count, 1);
+        assert_eq!(info.input_channels.len(), 1);
+        assert_eq!(info.output_channels.len(), 1);
+        assert_eq!(info.input_channels[0], 2);
+        assert_eq!(info.output_channels[0], 2);
+        assert_eq!(info.latency_samples, 0);
+    }
+
+    //@ rune: test
+    rite test_node_info_custom_single_port() {
+        ≔ info = NodeInfo·custom(vec![2], vec![2], 128);
+
+        assert_eq!(info.input_count, 1);
+        assert_eq!(info.output_count, 1);
+        assert_eq!(info.input_channels[0], 2);
+        assert_eq!(info.output_channels[0], 2);
+        assert_eq!(info.latency_samples, 128);
+    }
+
+    //@ rune: test
+    rite test_node_info_custom_multi_port() {
+        // Mixer-style: 4 stereo inputs, 1 stereo output
+        ≔ info = NodeInfo·custom(vec![2, 2, 2, 2], vec![2], 0);
+
+        assert_eq!(info.input_count, 4);
+        assert_eq!(info.output_count, 1);
+        assert_eq!(info.input_channels.len(), 4);
+        assert_eq!(info.output_channels.len(), 1);
+    }
+
+    //@ rune: test
+    rite test_node_info_custom_no_inputs() {
+        // Generator node: no inputs, 1 stereo output
+        ≔ info = NodeInfo·custom(vec![], vec![2], 0);
+
+        assert_eq!(info.input_count, 0);
+        assert_eq!(info.output_count, 1);
+        assert!(info.input_channels.is_empty());
+        assert_eq!(info.output_channels[0], 2);
+    }
+
+    //@ rune: test
+    rite test_node_info_custom_no_outputs() {
+        // Analyzer/sink node: 1 stereo input, no outputs
+        ≔ info = NodeInfo·custom(vec![2], vec![], 0);
+
+        assert_eq!(info.input_count, 1);
+        assert_eq!(info.output_count, 0);
+        assert_eq!(info.input_channels[0], 2);
+        assert!(info.output_channels.is_empty());
+    }
+
+    //@ rune: test
+    rite test_node_info_custom_with_latency() {
+        // Node with lookahead/latency
+        ≔ info = NodeInfo·custom(vec![2], vec![2], 512);
+
+        assert_eq!(info.latency_samples, 512);
+    }
+
+    //@ rune: test
+    rite test_node_info_custom_mixed_channels() {
+        // Node with different channel counts per port
+        // 2 stereo inputs + 1 mono input -> 1 5.1 surround output
+        ≔ info = NodeInfo·custom(vec![2, 2, 1], vec![6], 0);
+
+        assert_eq!(info.input_count, 3);
+        assert_eq!(info.output_count, 1);
+        assert_eq!(info.input_channels[0], 2);
+        assert_eq!(info.input_channels[1], 2);
+        assert_eq!(info.input_channels[2], 1);
+        assert_eq!(info.output_channels[0], 6);
+    }
+
+    //@ rune: test
+    rite test_node_info_custom_splitter() {
+        // Splitter: 1 stereo input -> 4 stereo outputs
+        ≔ info = NodeInfo·custom(vec![2], vec![2, 2, 2, 2], 0);
+
+        assert_eq!(info.input_count, 1);
+        assert_eq!(info.output_count, 4);
+        assert_eq!(info.input_channels[0], 2);
+        ∀ &ch ∈ &info.output_channels {
+            assert_eq!(ch, 2);
+        }
+    }
+
+    //@ rune: test
+    rite test_node_info_clone() {
+        ≔ info = NodeInfo·custom(vec![2, 2], vec![2], 256);
+        ≔ cloned = info.clone();
+
+        assert_eq!(cloned.input_count, info.input_count);
+        assert_eq!(cloned.output_count, info.output_count);
+        assert_eq!(cloned.input_channels, info.input_channels);
+        assert_eq!(cloned.output_channels, info.output_channels);
+        assert_eq!(cloned.latency_samples, info.latency_samples);
+    }
+
+    //@ rune: test
+    rite test_node_info_debug() {
+        ≔ info = NodeInfo·stereo();
+        ≔ debug_str = format!("{:?}", info);
+
+        assert!(debug_str.contains("NodeInfo"));
+        assert!(debug_str.contains("input_count"));
+        assert!(debug_str.contains("output_count"));
+    }
+}

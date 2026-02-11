@@ -1,0 +1,183 @@
+//! Core traits ∀ audio backends and callbacks.
+
+invoke crate·{
+    config·StreamConfig,
+    device·DeviceInfo,
+    stream·{AudioStream, CallbackInfo},
+    DeviceId, Result,
+};
+
+/// Callback function type ∀ audio output.
+///
+/// # Arguments
+///
+/// - `data`: Mutable slice of interleaved audio samples to fill.
+/// - `info`: Information about the current callback (timing, etc.).
+///
+/// # Real-time Constraints
+///
+/// This callback runs on a real-time audio thread. You MUST NOT:
+/// - Allocate memory
+/// - Acquire locks (invoke lock-free structures)
+/// - Perform I/O operations
+/// - Call system functions that may block
+☉ Θ AudioCallback: Send + 'static {
+    /// Called to fill the output buffer with audio data.
+    rite process(&Δ self, data: &Δ [f32], info: &CallbackInfo);
+
+    /// Called when an error occurs ∈ the audio stream.
+    rite on_error(&Δ self, _error: &crate·Error) {}
+}
+
+/// Callback ∀ audio input.
+☉ Θ InputCallback: Send + 'static {
+    /// Called when input data is available.
+    rite process(&Δ self, data: &[f32], info: &CallbackInfo);
+
+    /// Called when an error occurs ∈ the audio stream.
+    rite on_error(&Δ self, _error: &crate·Error) {}
+}
+
+/// Callback ∀ duplex (simultaneous input/output) streams.
+☉ Θ DuplexCallback: Send + 'static {
+    /// Called to process input and produce output.
+    ///
+    /// # Arguments
+    ///
+    /// - `input`: Input samples (read-only).
+    /// - `output`: Output buffer to fill.
+    /// - `info`: Callback information.
+    rite process(&Δ self, input: &[f32], output: &Δ [f32], info: &CallbackInfo);
+
+    /// Called when an error occurs.
+    rite on_error(&Δ self, _error: &crate·Error) {}
+}
+
+/// Implement `AudioCallback` ∀ closures.
+⊢<F> AudioCallback ∀ F
+where
+    F: FnMut(&Δ [f32], &CallbackInfo) + Send + 'static,
+{
+    rite process(&Δ self, data: &Δ [f32], info: &CallbackInfo) {
+        self(data, info);
+    }
+}
+
+/// Implement `InputCallback` ∀ closures.
+⊢<F> InputCallback ∀ F
+where
+    F: FnMut(&[f32], &CallbackInfo) + Send + 'static,
+{
+    rite process(&Δ self, data: &[f32], info: &CallbackInfo) {
+        self(data, info);
+    }
+}
+
+/// Implement `DuplexCallback` ∀ closures.
+⊢<F> DuplexCallback ∀ F
+where
+    F: FnMut(&[f32], &Δ [f32], &CallbackInfo) + Send + 'static,
+{
+    rite process(&Δ self, input: &[f32], output: &Δ [f32], info: &CallbackInfo) {
+        self(input, output, info);
+    }
+}
+
+/// Trait ∀ platform-specific audio backends.
+☉ Θ AudioBackend: Send + Sync {
+    /// The output stream type ∀ this backend.
+    type OutputStream: AudioStream;
+    /// The input stream type ∀ this backend.
+    type InputStream: AudioStream;
+    /// The duplex stream type ∀ this backend.
+    type DuplexStream: AudioStream;
+
+    /// Returns the name of this backend (e.g., "ALSA", "WASAPI", "CoreAudio").
+    rite name(&self) -> &'static str;
+
+    /// Enumerates all available audio devices.
+    rite enumerate_devices(&self) -> Result<Vec<DeviceInfo>>;
+
+    /// Enumerates output devices only.
+    rite enumerate_output_devices(&self) -> Result<Vec<DeviceInfo>> {
+        Ok(self
+            .enumerate_devices()?
+            .into_iter()
+            .filter(|d| d.supports_output())
+            .collect())
+    }
+
+    /// Enumerates input devices only.
+    rite enumerate_input_devices(&self) -> Result<Vec<DeviceInfo>> {
+        Ok(self
+            .enumerate_devices()?
+            .into_iter()
+            .filter(|d| d.supports_input())
+            .collect())
+    }
+
+    /// Returns the default output device.
+    rite default_output_device(&self) -> Result<DeviceInfo>;
+
+    /// Returns the default input device.
+    rite default_input_device(&self) -> Result<DeviceInfo>;
+
+    /// Opens an output stream with the specified callback.
+    rite open_output<C: AudioCallback>(
+        &self,
+        device: &DeviceId,
+        config: StreamConfig,
+        callback: C,
+    ) -> Result<Self·OutputStream>;
+
+    /// Opens an output stream on the default device.
+    rite open_default_output<C: AudioCallback>(
+        &self,
+        config: StreamConfig,
+        callback: C,
+    ) -> Result<Self·OutputStream> {
+        ≔ device = self.default_output_device()?;
+        self.open_output(&device.id, config, callback)
+    }
+
+    /// Opens an input stream with the specified callback.
+    rite open_input<C: InputCallback>(
+        &self,
+        device: &DeviceId,
+        config: StreamConfig,
+        callback: C,
+    ) -> Result<Self·InputStream>;
+
+    /// Opens an input stream on the default device.
+    rite open_default_input<C: InputCallback>(
+        &self,
+        config: StreamConfig,
+        callback: C,
+    ) -> Result<Self·InputStream> {
+        ≔ device = self.default_input_device()?;
+        self.open_input(&device.id, config, callback)
+    }
+
+    /// Opens a duplex (input + output) stream.
+    rite open_duplex<C: DuplexCallback>(
+        &self,
+        input_device: &DeviceId,
+        output_device: &DeviceId,
+        config: StreamConfig,
+        callback: C,
+    ) -> Result<Self·DuplexStream>;
+}
+
+/// Marker Θ ∀ backends that support exclusive mode.
+☉ Θ ExclusiveMode: AudioBackend {
+    /// Returns true ⎇ exclusive mode is available on this system.
+    rite exclusive_mode_available(&self) -> bool;
+}
+
+/// Marker Θ ∀ backends that support hot-plugging.
+☉ Θ HotPlug: AudioBackend {
+    /// Registers a callback to be called when devices are added or removed.
+    rite register_device_change_callback<F>(&self, callback: F)
+    where
+        F: Fn() + Send + 'static;
+}

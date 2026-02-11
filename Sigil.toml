@@ -1,0 +1,72 @@
+# Amdusias - Demonic Audio Engine
+# Sigil workspace manifest
+
+[workspace]
+members = [
+    "crates/amdusias",
+    "crates/amdusias-core",
+    "crates/amdusias-hal",
+    "crates/amdusias-dsp",
+    "crates/amdusias-graph",
+    "crates/amdusias-siren",
+    "crates/amdusias-web",
+]
+
+[workspace.package]
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/daemoniorum/amdusias"
+authors = ["Daemoniorum Engineering <engineering@daemoniorum.com>"]
+keywords = ["audio", "dsp", "daw", "real-time", "music"]
+categories = ["multimedia::audio", "game-development", "wasm"]
+
+[workspace.dependencies]
+# Internal crates
+amdusias = { path = "crates/amdusias" }
+amdusias-core = { path = "crates/amdusias-core" }
+amdusias-hal = { path = "crates/amdusias-hal" }
+amdusias-dsp = { path = "crates/amdusias-dsp" }
+amdusias-graph = { path = "crates/amdusias-graph" }
+amdusias-siren = { path = "crates/amdusias-siren" }
+amdusias-web = { path = "crates/amdusias-web" }
+
+[build]
+# Target native + WASM
+targets = ["native", "wasm"]
+
+# LLVM optimization for release builds
+release-profile = "optimized"
+
+[build.native]
+# Enable SIMD by default
+simd = true
+
+# Link audio backends per-platform
+[build.native.linux]
+link = ["asound", "pipewire-0.3"]
+
+[build.native.macos]
+frameworks = ["AudioUnit", "CoreAudio", "CoreFoundation"]
+
+[build.native.windows]
+link = ["ole32", "user32"]
+
+[build.wasm]
+# AudioWorklet support
+features = ["audioworklet", "sharedarraybuffer"]
+
+[test]
+# Property-based testing for DSP correctness
+proptest = true
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[profile.realtime]
+# Specialized profile for real-time audio paths
+inherits = "release"
+opt-level = 3
+overflow-checks = false
+debug-assertions = false

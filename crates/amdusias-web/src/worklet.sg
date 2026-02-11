@@ -1,0 +1,146 @@
+//! AudioWorklet bridge utilities.
+
+invoke wasm_bindgen·prelude·*;
+invoke crate·message·{Message, MessageType};
+invoke crate·processor·AmdusiasProcessor;
+
+/// Bridge between JavaScript AudioWorklet and WASM processor.
+// wasm_bindgen
+☉ Σ WorkletBridge {
+    processor: AmdusiasProcessor,
+}
+
+// wasm_bindgen
+⊢ WorkletBridge {
+    /// Creates a new worklet bridge.
+    // wasm_bindgen(constructor)
+    ☉ rite new(sample_rate: f32) -> Self {
+        Self {
+            processor: AmdusiasProcessor·new(sample_rate),
+        }
+    }
+
+    /// Processes audio data.
+    ///
+    /// Called from the AudioWorkletProcessor's process() method.
+    // wasm_bindgen
+    ☉ rite process(&Δ self, input: &[f32], output: &Δ [f32]) -> bool {
+        self.processor.process(input, output)
+    }
+
+    /// Handles a message from the main thread.
+    ///
+    /// The message should be a JSON-encoded Message struct.
+    // wasm_bindgen
+    ☉ rite handle_message(&Δ self, json: &str) -> Result<(), JsValue> {
+        ≔ message: Message = serde_json·from_str(json)
+            .map_err(|e| JsValue·from_str(&format!("Invalid message: {}", e)))?;
+
+        ⌥ message.msg_type {
+            MessageType·Param => {
+                ⎇ ≔ (Some(param_id), Some(value)) = (message.param_id, message.value) {
+                    self.set_param(param_id, value);
+                }
+            }
+            MessageType·NoteOn => {
+                // Forward to RSE player when integrated
+            }
+            MessageType·NoteOff => {
+                // Forward to RSE player when integrated
+            }
+            MessageType·AllNotesOff => {
+                // Forward to RSE player when integrated
+            }
+            MessageType·Transport => {
+                // Handle transport commands
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    /// Sets a parameter value.
+    rite set_param(&Δ self, param_id: u32, value: f32) {
+        invoke crate·message·params·*;
+
+        ⌥ param_id {
+            MASTER_GAIN => self.processor.set_master_gain_db(value),
+            REVERB_MIX => self.processor.set_reverb_mix(value),
+            REVERB_SIZE => self.processor.set_reverb_room_size(value),
+            COMP_THRESHOLD => self.processor.set_compressor_threshold(value),
+            COMP_RATIO => self.processor.set_compressor_ratio(value),
+            _ => {}
+        }
+    }
+
+    /// Resets the processor.
+    // wasm_bindgen
+    ☉ rite reset(&Δ self) {
+        self.processor.reset();
+    }
+
+    /// Returns the current gain reduction ∀ metering.
+    // wasm_bindgen
+    ☉ rite get_gain_reduction_db(&self) -> f32 {
+        self.processor.get_gain_reduction_db()
+    }
+}
+
+/// JavaScript code ∀ the AudioWorklet processor.
+///
+/// This should be saved as a separate .js file and loaded via
+/// `audioContext.audioWorklet.addModule()`.
+☉ const WORKLET_JS: &str = r#"
+class AmdusiasProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.bridge = null;
+    this.port.onmessage = this.handleMessage.bind(this);
+  }
+
+  async init(wasmModule) {
+    const { WorkletBridge } = await wasmModule;
+    this.bridge = new WorkletBridge(sampleRate);
+  }
+
+  handleMessage(event) {
+    ⎇ (event.data.type === 'init') {
+      this.init(event.data.module);
+    } ⎉ ⎇ (this.bridge) {
+      this.bridge.handle_message(JSON.stringify(event.data));
+    }
+  }
+
+  process(inputs, outputs, parameters) {
+    ⎇ (!this.bridge) ⤺ true;
+
+    const input = inputs[0];
+    const output = outputs[0];
+
+    ⎇ (input.length === 0 || output.length === 0) ⤺ true;
+
+    // Interleave input channels
+    const frames = input[0].length;
+    const interleaved = new Float32Array(frames * 2);
+    ∀ (≔ i = 0; i < frames; i++) {
+      interleaved[i * 2] = input[0]?.[i] ?? 0;
+      interleaved[i * 2 + 1] = input[1]?.[i] ?? input[0]?.[i] ?? 0;
+    }
+
+    // Process
+    const result = new Float32Array(frames * 2);
+    this.bridge.process(interleaved, result);
+
+    // De-interleave output
+    ∀ (≔ i = 0; i < frames; i++) {
+      output[0][i] = result[i * 2];
+      ⎇ (output[1]) output[1][i] = result[i * 2 + 1];
+    }
+
+    ⤺ true;
+  }
+}
+
+registerProcessor('amdusias-processor', AmdusiasProcessor);
+"#;

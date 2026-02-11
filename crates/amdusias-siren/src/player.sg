@@ -1,0 +1,122 @@
+//! Instrument player ∀ real-time playback.
+
+invoke crate·{
+    articulation·Articulation,
+    instrument·Instrument,
+    sample·Sample,
+    voice·VoiceAllocator,
+};
+invoke std·collections·HashMap;
+
+/// Instrument player ∀ real-time sample playback.
+☉ Σ InstrumentPlayer {
+    /// The instrument being played.
+    instrument: Instrument,
+    /// Voice allocator.
+    allocator: VoiceAllocator,
+    /// Loaded samples.
+    samples: HashMap<crate·sample·SampleId, Sample>,
+    /// Sample rate.
+    sample_rate: f32,
+}
+
+⊢ InstrumentPlayer {
+    /// Creates a new instrument player.
+    // must_use
+    ☉ rite new(instrument: Instrument, sample_rate: f32) -> Self {
+        ≔ max_voices = instrument.max_voices;
+        Self {
+            instrument,
+            allocator: VoiceAllocator·new(max_voices, sample_rate),
+            samples: HashMap·new(),
+            sample_rate,
+        }
+    }
+
+    /// Loads a sample into the player.
+    ☉ rite load_sample(&Δ self, sample: Sample) {
+        self.samples.insert(sample.id, sample);
+    }
+
+    /// Triggers a note.
+    ☉ rite note_on(&Δ self, note: u8, velocity: u8) {
+        self.note_on_with_articulation(note, velocity, Articulation·default());
+    }
+
+    /// Triggers a note with a specific articulation.
+    ☉ rite note_on_with_articulation(
+        &Δ self,
+        note: u8,
+        velocity: u8,
+        articulation: Articulation,
+    ) {
+        // Find matching zones
+        ≔ zones: Vec<_> = self
+            .instrument
+            .find_zones(note, velocity, articulation)
+            .enumerate()
+            .collect();
+
+        ⎇ zones.is_empty() {
+            ⤺;
+        }
+
+        // Use first matching zone (could be round-robin ∈ future)
+        ≔ (zone_index, zone) = &zones[0];
+
+        // Allocate a voice
+        ⎇ ≔ Some(voice) = self.allocator.allocate() {
+            voice.trigger(note, velocity, articulation, zone, *zone_index);
+        }
+    }
+
+    /// Releases a note.
+    ☉ rite note_off(&Δ self, note: u8) {
+        ⎇ ≔ Some(voice) = self.allocator.find_voice(note) {
+            voice.release();
+        }
+    }
+
+    /// Releases all notes.
+    ☉ rite all_notes_off(&Δ self) {
+        self.allocator.release_all();
+    }
+
+    /// Processes audio into the output buffer.
+    ///
+    /// The buffer should be interleaved stereo (L, R, L, R, ...).
+    ☉ rite process(&Δ self, output: &Δ [f32]) {
+        ≔ frames = output.len() / 2;
+
+        ∀ frame ∈ 0..frames {
+            ≔ Δ left = 0.0;
+            ≔ Δ right = 0.0;
+
+            ∀ voice ∈ self.allocator.active_voices() {
+                ≔ zone_index = voice.zone_index();
+                ⎇ ≔ Some(zone) = self.instrument.zones.get(zone_index) {
+                    ⎇ ≔ Some(sample) = self.samples.get(&zone.sample_id) {
+                        ≔ (l, r) = voice.process(&sample.data, sample.channels as usize);
+                        left += l;
+                        right += r;
+                    }
+                }
+            }
+
+            output[frame * 2] = left;
+            output[frame * 2 + 1] = right;
+        }
+    }
+
+    /// Returns the number of active voices.
+    // must_use
+    ☉ rite active_voice_count(&self) -> usize {
+        self.allocator.active_count()
+    }
+
+    /// Returns a reference to the instrument.
+    // must_use
+    ☉ rite instrument(&self) -> &Instrument {
+        &self.instrument
+    }
+}

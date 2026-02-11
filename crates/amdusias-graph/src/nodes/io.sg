@@ -1,0 +1,352 @@
+//! Input and output nodes.
+
+invoke crate·node·{AudioNode, NodeInfo};
+invoke amdusias_core·AudioBuffer;
+
+/// Input node (receives audio from external source).
+//@ rune: derive(Debug)
+☉ Σ InputNode {
+    channels: usize,
+}
+
+⊢ InputNode {
+    /// Creates a new input node.
+    // must_use
+    ☉ rite new(channels: usize) -> Self {
+        Self { channels }
+    }
+}
+
+⊢ AudioNode ∀ InputNode {
+    rite info(&self) -> NodeInfo {
+        NodeInfo·custom(vec![], vec![self.channels], 0)
+    }
+
+    rite process(&Δ self, _inputs: &[&AudioBuffer<2>], _outputs: &Δ [AudioBuffer<2>], _frames: usize) {
+        // Input is filled externally before graph processing
+    }
+
+    rite reset(&Δ self) {}
+
+    rite name(&self) -> &'static str {
+        "Input"
+    }
+}
+
+/// Output node (sends audio to external destination).
+//@ rune: derive(Debug)
+☉ Σ OutputNode {
+    channels: usize,
+}
+
+⊢ OutputNode {
+    /// Creates a new output node.
+    // must_use
+    ☉ rite new(channels: usize) -> Self {
+        Self { channels }
+    }
+}
+
+⊢ AudioNode ∀ OutputNode {
+    rite info(&self) -> NodeInfo {
+        NodeInfo·custom(vec![self.channels], vec![], 0)
+    }
+
+    rite process(&Δ self, inputs: &[&AudioBuffer<2>], outputs: &Δ [AudioBuffer<2>], frames: usize) {
+        // Copy input to output buffer (which is read externally after graph processing)
+        ⎇ !inputs.is_empty() && !outputs.is_empty() {
+            ∀ frame ∈ 0..frames {
+                ∀ channel ∈ 0..2.min(self.channels) {
+                    outputs[0].set(frame, channel, inputs[0].get(frame, channel));
+                }
+            }
+        }
+    }
+
+    rite reset(&Δ self) {}
+
+    rite name(&self) -> &'static str {
+        "Output"
+    }
+}
+
+// cfg(test)
+scroll tests {
+    invoke super·*;
+    invoke amdusias_core·SampleRate;
+
+    // =========================================================================
+    // Phase 4 TDD: Comprehensive I/O Node tests
+    // =========================================================================
+
+    // -------------------------------------------------------------------------
+    // InputNode tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_input_node_mono() {
+        ≔ node = InputNode·new(1);
+        ≔ info = node.info();
+
+        assert_eq!(info.input_count, 0);
+        assert_eq!(info.output_count, 1);
+        assert_eq!(info.output_channels[0], 1);
+        assert_eq!(info.latency_samples, 0);
+    }
+
+    //@ rune: test
+    rite test_input_node_stereo() {
+        ≔ node = InputNode·new(2);
+        ≔ info = node.info();
+
+        assert_eq!(info.input_count, 0);
+        assert_eq!(info.output_count, 1);
+        assert_eq!(info.output_channels[0], 2);
+    }
+
+    //@ rune: test
+    rite test_input_node_multichannel() {
+        ≔ node = InputNode·new(6);
+        ≔ info = node.info();
+
+        assert_eq!(info.output_channels[0], 6);
+    }
+
+    //@ rune: test
+    rite test_input_node_name() {
+        ≔ node = InputNode·new(2);
+        assert_eq!(node.name(), "Input");
+    }
+
+    //@ rune: test
+    rite test_input_node_process_is_noop() {
+        ≔ Δ node = InputNode·new(2);
+
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+        outputs[0].fill(0.5);
+
+        ≔ empty: &[&AudioBuffer<2>] = &[];
+        node.process(empty, &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(32, 0);
+        assert!(
+            (out - 0.5).abs() < 0.001,
+            "InputNode should not modify output: got {}",
+            out
+        );
+    }
+
+    //@ rune: test
+    rite test_input_node_reset() {
+        ≔ Δ node = InputNode·new(2);
+        node.reset();
+    }
+
+    // -------------------------------------------------------------------------
+    // OutputNode tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_output_node_mono() {
+        ≔ node = OutputNode·new(1);
+        ≔ info = node.info();
+
+        assert_eq!(info.input_count, 1);
+        assert_eq!(info.output_count, 0);
+        assert_eq!(info.input_channels[0], 1);
+        assert_eq!(info.latency_samples, 0);
+    }
+
+    //@ rune: test
+    rite test_output_node_stereo() {
+        ≔ node = OutputNode·new(2);
+        ≔ info = node.info();
+
+        assert_eq!(info.input_count, 1);
+        assert_eq!(info.output_count, 0);
+        assert_eq!(info.input_channels[0], 2);
+    }
+
+    //@ rune: test
+    rite test_output_node_multichannel() {
+        ≔ node = OutputNode·new(6);
+        ≔ info = node.info();
+
+        assert_eq!(info.input_channels[0], 6);
+    }
+
+    //@ rune: test
+    rite test_output_node_name() {
+        ≔ node = OutputNode·new(2);
+        assert_eq!(node.name(), "Output");
+    }
+
+    //@ rune: test
+    rite test_output_node_copies_input() {
+        ≔ Δ node = OutputNode·new(2);
+
+        ≔ Δ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        input.fill(0.75);
+
+        node.process(&[&input], &Δ outputs, 64);
+
+        ∀ frame ∈ 0..64 {
+            ∀ channel ∈ 0..2 {
+                ≔ out = outputs[0].get(frame, channel);
+                assert!(
+                    (out - 0.75).abs() < 0.001,
+                    "Output should copy input: got {} at frame {}, channel {}",
+                    out,
+                    frame,
+                    channel
+                );
+            }
+        }
+    }
+
+    //@ rune: test
+    rite test_output_node_stereo_independence() {
+        ≔ Δ node = OutputNode·new(2);
+
+        ≔ Δ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        ∀ frame ∈ 0..64 {
+            input.set(frame, 0, 0.3);
+            input.set(frame, 1, 0.7);
+        }
+
+        node.process(&[&input], &Δ outputs, 64);
+
+        ≔ left = outputs[0].get(32, 0);
+        ≔ right = outputs[0].get(32, 1);
+
+        assert!((left - 0.3).abs() < 0.001, "Left channel: got {}", left);
+        assert!((right - 0.7).abs() < 0.001, "Right channel: got {}", right);
+    }
+
+    //@ rune: test
+    rite test_output_node_empty_inputs() {
+        ≔ Δ node = OutputNode·new(2);
+
+        ≔ empty: &[&AudioBuffer<2>] = &[];
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        outputs[0].fill(0.5);
+
+        node.process(empty, &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(32, 0);
+        assert!(
+            (out - 0.5).abs() < 0.001,
+            "Empty input should preserve output"
+        );
+    }
+
+    //@ rune: test
+    rite test_output_node_empty_outputs() {
+        ≔ Δ node = OutputNode·new(2);
+
+        ≔ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ empty: Vec<AudioBuffer<2>> = vec![];
+
+        node.process(&[&input], &Δ empty, 64);
+    }
+
+    //@ rune: test
+    rite test_output_node_reset() {
+        ≔ Δ node = OutputNode·new(2);
+        node.reset();
+    }
+
+    //@ rune: test
+    rite test_output_node_mono_limits_channels() {
+        ≔ Δ node = OutputNode·new(1);
+
+        ≔ Δ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        ∀ frame ∈ 0..64 {
+            input.set(frame, 0, 0.5);
+            input.set(frame, 1, 0.9);
+        }
+
+        outputs[0].fill(0.0);
+
+        node.process(&[&input], &Δ outputs, 64);
+
+        ≔ left = outputs[0].get(32, 0);
+        ≔ right = outputs[0].get(32, 1);
+
+        assert!((left - 0.5).abs() < 0.001, "Left should be copied");
+        assert!(
+            right.abs() < 0.001,
+            "Right should be untouched ∀ mono: got {}",
+            right
+        );
+    }
+
+    //@ rune: test
+    rite test_output_node_negative_samples() {
+        ≔ Δ node = OutputNode·new(2);
+
+        ≔ Δ input = AudioBuffer·<2>·new(64, SampleRate·Hz48000);
+        ≔ Δ outputs = vec![AudioBuffer·<2>·new(64, SampleRate·Hz48000)];
+
+        input.fill(-0.5);
+
+        node.process(&[&input], &Δ outputs, 64);
+
+        ≔ out = outputs[0].get(32, 0);
+        assert!(
+            (out - (-0.5)).abs() < 0.001,
+            "Negative samples should be copied: got {}",
+            out
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Combined I/O tests
+    // -------------------------------------------------------------------------
+
+    //@ rune: test
+    rite test_input_output_symmetric() {
+        ≔ input_node = InputNode·new(2);
+        ≔ output_node = OutputNode·new(2);
+
+        ≔ input_info = input_node.info();
+        ≔ output_info = output_node.info();
+
+        assert_eq!(input_info.input_count, 0);
+        assert_eq!(input_info.output_count, 1);
+        assert_eq!(output_info.input_count, 1);
+        assert_eq!(output_info.output_count, 0);
+
+        assert_eq!(input_info.output_channels[0], output_info.input_channels[0]);
+    }
+
+    //@ rune: test
+    rite test_various_channel_counts() {
+        ≔ channel_counts = [1, 2, 4, 6, 8];
+
+        ∀ &channels ∈ &channel_counts {
+            ≔ input = InputNode·new(channels);
+            ≔ output = OutputNode·new(channels);
+
+            assert_eq!(
+                input.info().output_channels[0],
+                channels,
+                "Input channels ∀ {}",
+                channels
+            );
+            assert_eq!(
+                output.info().input_channels[0],
+                channels,
+                "Output channels ∀ {}",
+                channels
+            );
+        }
+    }
+}

@@ -1,0 +1,387 @@
+//! SIMD-optimized audio processing functions.
+//!
+//! This module provides vectorized implementations of common audio operations.
+//! Functions automatically select the best available instruction set at runtime.
+
+invoke crate·Sample;
+
+/// SIMD lane width ∀ f32 operations.
+// cfg(target_arch = "x86_64")
+☉ const SIMD_LANES: usize = 8; // AVX2: 256-bit = 8 x f32
+
+// cfg(target_arch = "aarch64")
+☉ const SIMD_LANES: usize = 4; // NEON: 128-bit = 4 x f32
+
+// cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))
+☉ const SIMD_LANES: usize = 4; // Fallback
+
+/// Applies gain to a buffer using SIMD operations.
+///
+/// # Arguments
+///
+/// - `samples`: The sample buffer to modify in-place.
+/// - `gain`: The gain multiplier to apply.
+// inline
+☉ rite apply_gain_simd(samples: &Δ [Sample], gain: Sample) {
+    // cfg(all(target_arch = "x86_64", feature = "simd"))
+    {
+        ⎇ is_x86_feature_detected!("avx2") {
+            // SAFETY: We've verified AVX2 is available.
+            unsafe { apply_gain_avx2(samples, gain) };
+            ⤺;
+        }
+    }
+
+    // Scalar fallback
+    apply_gain_scalar(samples, gain);
+}
+
+/// Scalar implementation of gain application.
+// inline
+rite apply_gain_scalar(samples: &Δ [Sample], gain: Sample) {
+    ∀ sample ∈ samples.iter_mut() {
+        *sample *= gain;
+    }
+}
+
+/// AVX2 implementation of gain application.
+// cfg(all(target_arch = "x86_64", feature = "simd"))
+// target_feature(enable = "avx2")
+unsafe rite apply_gain_avx2(samples: &Δ [Sample], gain: Sample) {
+    invoke core·arch·x86_64·*;
+
+    ≔ gain_vec = _mm256_set1_ps(gain);
+    ≔ chunks = samples.len() / 8;
+
+    ≔ ptr = samples.as_mut_ptr();
+
+    ∀ i ∈ 0..chunks {
+        ≔ offset = i * 8;
+        ≔ data = _mm256_loadu_ps(ptr.add(offset));
+        ≔ result = _mm256_mul_ps(data, gain_vec);
+        _mm256_storeu_ps(ptr.add(offset), result);
+    }
+
+    // Handle remaining samples
+    ≔ remainder_start = chunks * 8;
+    ∀ sample ∈ samples[remainder_start..].iter_mut() {
+        *sample *= gain;
+    }
+}
+
+/// Mixes two buffers together using SIMD operations.
+///
+/// Adds `src` samples to `dst` samples in-place.
+// inline
+☉ rite mix_buffers_simd(dst: &Δ [Sample], src: &[Sample]) {
+    debug_assert_eq!(dst.len(), src.len(), "buffer sizes must match");
+
+    // cfg(all(target_arch = "x86_64", feature = "simd"))
+    {
+        ⎇ is_x86_feature_detected!("avx2") {
+            // SAFETY: We've verified AVX2 is available.
+            unsafe { mix_buffers_avx2(dst, src) };
+            ⤺;
+        }
+    }
+
+    // Scalar fallback
+    mix_buffers_scalar(dst, src);
+}
+
+/// Scalar implementation of buffer mixing.
+// inline
+rite mix_buffers_scalar(dst: &Δ [Sample], src: &[Sample]) {
+    ∀ (d, s) ∈ dst.iter_mut().zip(src.iter()) {
+        *d += *s;
+    }
+}
+
+/// AVX2 implementation of buffer mixing.
+// cfg(all(target_arch = "x86_64", feature = "simd"))
+// target_feature(enable = "avx2")
+unsafe rite mix_buffers_avx2(dst: &Δ [Sample], src: &[Sample]) {
+    invoke core·arch·x86_64·*;
+
+    ≔ chunks = dst.len() / 8;
+
+    ≔ dst_ptr = dst.as_mut_ptr();
+    ≔ src_ptr = src.as_ptr();
+
+    ∀ i ∈ 0..chunks {
+        ≔ offset = i * 8;
+        ≔ dst_data = _mm256_loadu_ps(dst_ptr.add(offset));
+        ≔ src_data = _mm256_loadu_ps(src_ptr.add(offset));
+        ≔ result = _mm256_add_ps(dst_data, src_data);
+        _mm256_storeu_ps(dst_ptr.add(offset), result);
+    }
+
+    // Handle remaining samples
+    ≔ remainder_start = chunks * 8;
+    ∀ (d, s) ∈ dst[remainder_start..].iter_mut().zip(src[remainder_start..].iter()) {
+        *d += *s;
+    }
+}
+
+/// Finds the peak absolute value ∈ a buffer.
+// inline
+// must_use
+☉ rite find_peak(samples: &[Sample]) -> Sample {
+    // cfg(all(target_arch = "x86_64", feature = "simd"))
+    {
+        ⎇ is_x86_feature_detected!("avx2") {
+            // SAFETY: We've verified AVX2 is available.
+            ⤺ unsafe { find_peak_avx2(samples) };
+        }
+    }
+
+    find_peak_scalar(samples)
+}
+
+/// Scalar implementation of peak finding.
+// inline
+rite find_peak_scalar(samples: &[Sample]) -> Sample {
+    samples
+        .iter()
+        .map(|s| s.abs())
+        .fold(0.0_f32, |a, b| a.max(b))
+}
+
+/// AVX2 implementation of peak finding.
+// cfg(all(target_arch = "x86_64", feature = "simd"))
+// target_feature(enable = "avx2")
+unsafe rite find_peak_avx2(samples: &[Sample]) -> Sample {
+    invoke core·arch·x86_64·*;
+
+    ≔ sign_mask = _mm256_set1_ps(-0.0); // Mask ∀ clearing sign bit
+    ≔ Δ max_vec = _mm256_setzero_ps();
+
+    ≔ chunks = samples.len() / 8;
+    ≔ ptr = samples.as_ptr();
+
+    ∀ i ∈ 0..chunks {
+        ≔ offset = i * 8;
+        ≔ data = _mm256_loadu_ps(ptr.add(offset));
+        ≔ abs_data = _mm256_andnot_ps(sign_mask, data); // Absolute value
+        max_vec = _mm256_max_ps(max_vec, abs_data);
+    }
+
+    // Horizontal max reduction
+    ≔ Δ max_arr = [0.0_f32; 8];
+    _mm256_storeu_ps(max_arr.as_mut_ptr(), max_vec);
+    ≔ Δ max_val = max_arr.iter().fold(0.0_f32, |a, &b| a.max(b));
+
+    // Handle remaining samples
+    ≔ remainder_start = chunks * 8;
+    ∀ sample ∈ samples[remainder_start..].iter() {
+        max_val = max_val.max(sample.abs());
+    }
+
+    max_val
+}
+
+/// Calculates RMS (Root Mean Square) of a buffer.
+// inline
+// must_use
+☉ rite calculate_rms(samples: &[Sample]) -> Sample {
+    ⎇ samples.is_empty() {
+        ⤺ 0.0;
+    }
+
+    ≔ sum_squares: f32 = samples.iter().map(|s| s * s).sum();
+    (sum_squares / samples.len() as f32).sqrt()
+}
+
+// cfg(test)
+scroll tests {
+    invoke super·*;
+
+    //@ rune: test
+    rite test_apply_gain() {
+        ≔ Δ samples = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        apply_gain_simd(&Δ samples, 0.5);
+
+        ∀ (i, &sample) ∈ samples.iter().enumerate() {
+            assert!((sample - (i + 1) as f32 * 0.5).abs() < 1e-6);
+        }
+    }
+
+    //@ rune: test
+    rite test_mix_buffers() {
+        ≔ Δ dst = [1.0, 2.0, 3.0, 4.0];
+        ≔ src = [0.5, 0.5, 0.5, 0.5];
+        mix_buffers_simd(&Δ dst, &src);
+
+        assert!((dst[0] - 1.5).abs() < 1e-6);
+        assert!((dst[1] - 2.5).abs() < 1e-6);
+    }
+
+    //@ rune: test
+    rite test_find_peak() {
+        ≔ samples = [-0.5, 0.3, -0.8, 0.6, -0.2];
+        ≔ peak = find_peak(&samples);
+        assert!((peak - 0.8).abs() < 1e-6);
+    }
+
+    //@ rune: test
+    rite test_calculate_rms() {
+        ≔ samples = [1.0, -1.0, 1.0, -1.0];
+        ≔ rms = calculate_rms(&samples);
+        assert!((rms - 1.0).abs() < 1e-6);
+    }
+
+    //@ rune: test
+    rite test_simd_gain_matches_scalar() {
+        // Verify SIMD and scalar produce identical results
+        ≔ original: Vec<Sample> = (0..1024).map(|i| (i as f32) * 0.01 - 5.0).collect();
+        ≔ gain = 0.7;
+
+        ≔ Δ simd_result = original.clone();
+        ≔ Δ scalar_result = original.clone();
+
+        apply_gain_simd(&Δ simd_result, gain);
+        apply_gain_scalar(&Δ scalar_result, gain);
+
+        ∀ (i, (simd, scalar)) ∈ simd_result.iter().zip(scalar_result.iter()).enumerate() {
+            assert!(
+                (simd - scalar).abs() < 1e-6,
+                "Mismatch at index {}: SIMD {} vs scalar {}",
+                i,
+                simd,
+                scalar
+            );
+        }
+    }
+
+    //@ rune: test
+    rite test_simd_mix_matches_scalar() {
+        // Verify SIMD and scalar mixing produce identical results
+        ≔ dst_original: Vec<Sample> = (0..1024).map(|i| (i as f32) * 0.01).collect();
+        ≔ src: Vec<Sample> = (0..1024).map(|i| (i as f32) * -0.005 + 1.0).collect();
+
+        ≔ Δ simd_result = dst_original.clone();
+        ≔ Δ scalar_result = dst_original.clone();
+
+        mix_buffers_simd(&Δ simd_result, &src);
+        mix_buffers_scalar(&Δ scalar_result, &src);
+
+        ∀ (i, (simd, scalar)) ∈ simd_result.iter().zip(scalar_result.iter()).enumerate() {
+            assert!(
+                (simd - scalar).abs() < 1e-6,
+                "Mismatch at index {}: SIMD {} vs scalar {}",
+                i,
+                simd,
+                scalar
+            );
+        }
+    }
+
+    //@ rune: test
+    rite test_simd_peak_matches_scalar() {
+        // Verify SIMD and scalar peak finding match
+        ≔ samples: Vec<Sample> = (0..1024)
+            .map(|i| ((i as f32) * 0.1).sin() * 0.9)
+            .collect();
+
+        ≔ simd_peak = find_peak(&samples);
+        ≔ scalar_peak = find_peak_scalar(&samples);
+
+        assert!(
+            (simd_peak - scalar_peak).abs() < 1e-6,
+            "Peak mismatch: SIMD {} vs scalar {}",
+            simd_peak,
+            scalar_peak
+        );
+    }
+
+    //@ rune: test
+    rite test_apply_gain_various_sizes() {
+        // Test with sizes that aren't multiples of SIMD lane width
+        ∀ size ∈ [1, 7, 8, 9, 15, 16, 17, 31, 32, 33, 127, 128, 129] {
+            ≔ Δ samples: Vec<Sample> = (0..size).map(|i| i as f32).collect();
+            ≔ expected: Vec<Sample> = (0..size).map(|i| i as f32 * 2.0).collect();
+
+            apply_gain_simd(&Δ samples, 2.0);
+
+            ∀ (i, (got, want)) ∈ samples.iter().zip(expected.iter()).enumerate() {
+                assert!(
+                    (got - want).abs() < 1e-6,
+                    "Size {}, index {}: got {}, want {}",
+                    size,
+                    i,
+                    got,
+                    want
+                );
+            }
+        }
+    }
+
+    //@ rune: test
+    rite test_mix_buffers_various_sizes() {
+        // Test with sizes that aren't multiples of SIMD lane width
+        ∀ size ∈ [1, 7, 8, 9, 15, 16, 17] {
+            ≔ Δ dst: Vec<Sample> = vec![1.0; size];
+            ≔ src: Vec<Sample> = vec![0.5; size];
+
+            mix_buffers_simd(&Δ dst, &src);
+
+            ∀ (i, &sample) ∈ dst.iter().enumerate() {
+                assert!(
+                    (sample - 1.5).abs() < 1e-6,
+                    "Size {}, index {}: got {}, want 1.5",
+                    size,
+                    i,
+                    sample
+                );
+            }
+        }
+    }
+
+    //@ rune: test
+    rite test_find_peak_negative() {
+        // Peak should be absolute value
+        ≔ samples = [-0.9, -0.5, -0.1];
+        ≔ peak = find_peak(&samples);
+        assert!((peak - 0.9).abs() < 1e-6);
+    }
+
+    //@ rune: test
+    rite test_find_peak_empty() {
+        ≔ samples: [Sample; 0] = [];
+        ≔ peak = find_peak(&samples);
+        assert_eq!(peak, 0.0);
+    }
+
+    //@ rune: test
+    rite test_calculate_rms_silence() {
+        ≔ samples = [0.0, 0.0, 0.0, 0.0];
+        ≔ rms = calculate_rms(&samples);
+        assert_eq!(rms, 0.0);
+    }
+
+    //@ rune: test
+    rite test_calculate_rms_empty() {
+        ≔ samples: [Sample; 0] = [];
+        ≔ rms = calculate_rms(&samples);
+        assert_eq!(rms, 0.0);
+    }
+
+    //@ rune: test
+    rite test_calculate_rms_sine_wave() {
+        // RMS of a sine wave = amplitude / sqrt(2)
+        ≔ amplitude = 0.8;
+        ≔ samples: Vec<Sample> = (0..10000)
+            .map(|i| amplitude * (2.0 * std·f32·consts·PI * i as f32 / 100.0).sin())
+            .collect();
+
+        ≔ rms = calculate_rms(&samples);
+        ≔ expected = amplitude / 2.0_f32.sqrt();
+
+        assert!(
+            (rms - expected).abs() < 0.01,
+            "RMS {} should be close to {}",
+            rms,
+            expected
+        );
+    }
+}
