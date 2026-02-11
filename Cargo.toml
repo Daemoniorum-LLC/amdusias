@@ -104,7 +104,7 @@ web-sys = { version = "0.3", features = [
 # ═══════════════════════════════════════════════════════════════════════════════
 # Linux
 alsa = "0.9"
-pipewire = "0.8"
+pipewire = "0.9"
 libc = "0.2"
 
 # Windows (raw bindings, no windows-rs overhead)
