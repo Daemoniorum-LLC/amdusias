@@ -4,11 +4,11 @@ This file provides guidance to Claude Code when working with the Amdusias audio 
 
 ## Project Overview
 
-**Amdusias** is a professional-grade audio engine for DAW applications, built from the ground up in Rust with zero external audio dependencies. Named after the Duke of Hell who commands music.
+**Amdusias** is a professional-grade audio engine for DAW applications, written in Sigil with zero external audio dependencies. Named after the Duke of Hell who commands music.
 
 **Tech Stack:**
-- **Language:** Rust (Edition 2021) → migrating to Sigil
-- **Platforms:** Native (WASAPI/CoreAudio/ALSA/PipeWire) + WebAssembly (AudioWorklet)
+- **Language:** Sigil (polysynthetic programming language)
+- **Platforms:** Native (LLVM → WASAPI/CoreAudio/ALSA/PipeWire) + WebAssembly (AudioWorklet)
 - **Performance:** <5ms latency, SIMD (AVX2/NEON)
 - **License:** MIT OR Apache-2.0
 
@@ -23,7 +23,7 @@ When working in Amdusias, you are part of the **Conclave** - a collaborative sys
 1. **Read** `CONCLAVE.sigil` - understand the schema, read existing entries
 2. **Add your entry** in the `CURRENT SESSIONS` section
 3. **As you work**: update progress.completed, progress.current, progress.discoveries
-4. **When done**: set state to `AcolyteState::Reflecting`, update anima honestly
+4. **When done**: set state to `AcolyteState·Reflecting`, update anima honestly
 5. **Archive**: Move entry to `docs/sessions/YYYY-MM-DD-session-name.sigil`
 
 ### Methodologies
@@ -42,14 +42,14 @@ Read `LESSONS-LEARNED.md` at project root before starting work. Document any dis
 
 ```
 amdusias/
-├── Cargo.toml              # Workspace manifest
+├── Sigil.toml              # Workspace manifest
 ├── crates/
 │   ├── amdusias/           # Unified re-export crate
 │   ├── amdusias-core/      # Lock-free primitives, SIMD, scheduling
 │   ├── amdusias-hal/       # Hardware abstraction (WASAPI/CoreAudio/ALSA/PipeWire)
 │   ├── amdusias-dsp/       # DSP primitives (biquad, compressor, reverb)
 │   ├── amdusias-graph/     # Audio graph with automatic PDC
-│   ├── amdusias-siren/     # RSE (multi-sample instruments)
+│   ├── amdusias-siren/     # Enchanting multi-sample instruments
 │   └── amdusias-web/       # WASM + AudioWorklet bindings
 └── docs/
 ```
@@ -57,20 +57,27 @@ amdusias/
 ## Essential Commands
 
 ```bash
+# Install Sigil compiler
+cargo install sigil-parser
+
+# Type check
+sigil check .
+
 # Build all crates
-cargo build --release
+sigil build --release
 
 # Build specific crate
-cargo build -p amdusias-dsp --release
+sigil build -p amdusias-dsp --release
 
 # Run tests
-cargo test
-
-# Run benchmarks
-cargo bench
+sigil test
 
 # Build for WebAssembly
-wasm-pack build crates/amdusias-web --target web
+sigil build --target wasm
+
+# Build with LLVM (production)
+cargo install sigil-parser --features llvm
+sigil compile . -o amdusias --lto
 ```
 
 ## Key Modules
@@ -79,39 +86,38 @@ wasm-pack build crates/amdusias-web --target web
 
 | Module | Purpose |
 |--------|---------|
-| `buffer.rs` | Lock-free audio buffers |
-| `simd.rs` | SIMD operations (AVX2/NEON) |
-| `scheduler.rs` | Real-time thread scheduling |
-| `ring.rs` | Lock-free ring buffers |
+| `buffer.sg` | Lock-free audio buffers |
+| `simd.sg` | SIMD operations (AVX2/NEON) |
+| `schedule.sg` | Real-time thread scheduling |
+| `queue.sg` | Lock-free ring buffers |
 
 ### amdusias-dsp
 
 | Module | Purpose |
 |--------|---------|
-| `biquad.rs` | Biquad filter (lowpass, highpass, bandpass, etc.) |
-| `compressor.rs` | Dynamics compressor |
-| `limiter.rs` | Brickwall limiter |
-| `reverb.rs` | Algorithmic reverb |
-| `delay.rs` | Delay line |
-| `convolution.rs` | Convolution reverb |
+| `biquad.sg` | Biquad filter (lowpass, highpass, bandpass, etc.) |
+| `compressor.sg` | Dynamics compressor |
+| `limiter.sg` | Brickwall limiter |
+| `reverb.sg` | Algorithmic reverb |
+| `delay.sg` | Delay line |
 
 ### amdusias-hal
 
 | Module | Purpose |
 |--------|---------|
-| `wasapi.rs` | Windows Audio Session API |
-| `coreaudio.rs` | macOS Core Audio |
-| `alsa.rs` | Linux ALSA |
-| `pipewire.rs` | Linux PipeWire |
+| `windows/wasapi.sg` | Windows Audio Session API |
+| `macos/coreaudio.sg` | macOS Core Audio |
+| `linux/alsa.sg` | Linux ALSA |
 
-### amdusias-siren (RSE)
+### amdusias-siren
 
 | Module | Purpose |
 |--------|---------|
-| `instrument.rs` | Base instrument definition |
-| `sampler.rs` | Multi-sample playback |
-| `articulation.rs` | Playing techniques (palm mute, hammer-on, etc.) |
-| `guitar.rs` | Guitar-specific instruments |
+| `instrument.sg` | Base instrument definition |
+| `sample.sg` | Multi-sample playback |
+| `articulation.sg` | Playing techniques (palm mute, hammer-on, etc.) |
+| `guitar.sg` | Guitar-specific instruments |
+| `voice.sg` | Voice allocation and management |
 
 ## Performance Targets
 
@@ -122,54 +128,67 @@ wasm-pack build crates/amdusias-web --target web
 | Sample rates | 44.1kHz - 192kHz |
 | SIMD | AVX2 (x86_64), NEON (ARM) |
 
-## Sigil Migration
+## Sigil Syntax Quick Reference
 
-This crate is being migrated from Rust to Sigil as part of the Orpheus platform unification.
+Amdusias uses native Sigil syntax:
 
-### Migration Approach
+| Sigil | Meaning |
+|-------|---------|
+| `rite` | Function definition (λ also works) |
+| `≔` | Let binding |
+| `Δ` | Mutable binding |
+| `Σ` | Struct definition |
+| `⊢` | Impl block |
+| `Θ` | Trait definition |
+| `ᛈ` | Enum definition |
+| `☉` | Public visibility |
+| `·` | Path separator (::) |
+| `⎇`/`⎉` | If/else |
+| `⌥` | Match |
+| `⟳` | While loop |
+| `∀`/`∈` | For/in loop |
+| `⤺` | Return |
 
-1. Run `rust-to-sigil` compiler tool on each crate
-2. Refactor for idiomatic Sigil:
-   - Add evidentiality markers (`!` computed, `~` external, `?` uncertain)
-   - Use morpheme operators (φ filter, σ sort, τ map)
-   - Leverage pipe syntax for DSP chains
-3. Integrate Sigil's polycultural sound primitives
-4. Verify native + WASM compilation
+## Polycultural Sound Integration
 
-### Polycultural Sound Integration
-
-Sigil provides native support for global tuning systems:
+Sigil's stdlib provides polycultural audio primitives:
 
 ```sigil
-// Available in Sigil stdlib
-≔ shruti = shruti_freq(1)           // 22-Shruti Indian tuning
-≔ maqam = arabic_quarter_freq(0)    // Arabic quarter-tones (24-TET)
-≔ sacred = sacred_freq("om")        // Sacred frequencies
-≔ chakra = chakra_freq("heart")     // Chakra frequencies
+// 22-Shruti Indian tuning
+≔ shruti = shruti_freq(1)           // 256.0 Hz (Sa)
+
+// Arabic quarter-tones (24-TET)
+≔ maqam = arabic_quarter_freq(0)    // 440.0 Hz
+
+// Sacred frequencies
+≔ sacred = sacred_freq("om")        // 136.1 Hz
+≔ solfeggio = sacred_freq("528")    // 528.0 Hz
+
+// Chakra frequencies
+≔ chakra = chakra_freq("heart")     // 639.0 Hz
 ```
 
-These should be integrated into amdusias-dsp for oscillator tuning and pitch processing.
+These should be integrated into oscillator tuning and pitch processing.
 
 ## Code Standards
 
-- Use `#[inline]` for hot DSP paths
+- Use `// inline` directive for hot DSP paths
 - Prefer stack allocation for audio buffers
 - Use SIMD intrinsics where beneficial
 - All public APIs need documentation
 - Property tests for DSP correctness (roundtrip, linearity, etc.)
+- Add evidentiality markers where appropriate (`!` computed, `~` external, `?` uncertain)
+- Use morpheme operators (φ filter, σ sort, τ map) and pipe syntax for DSP chains
 
 ## Testing
 
 ```bash
 # Run all tests
-cargo test
+sigil test
 
 # Run specific crate tests
-cargo test -p amdusias-dsp
+sigil test -p amdusias-dsp
 
 # Run with output
-cargo test -- --nocapture
-
-# Run benchmarks
-cargo bench -p amdusias-core
+sigil test -- --nocapture
 ```

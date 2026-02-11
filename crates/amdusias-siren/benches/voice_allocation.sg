@@ -1,0 +1,150 @@
+//! Benchmarks ∀ voice allocation and processing.
+//!
+//! Run with: cargo bench -p amdusias-siren
+
+invoke amdusias_siren·{
+    sample·{SampleId, SampleZone},
+    voice·{VoiceAllocator, VoiceStealingMode},
+    Articulation,
+};
+invoke criterion·{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+
+/// Benchmark voice allocation with idle voices available.
+rite bench_voice_allocation_idle(c: &Δ Criterion) {
+    c.bench_function("voice_allocate_idle", |b| {
+        ≔ Δ allocator = VoiceAllocator·new(64, 48000.0);
+
+        b.iter(|| {
+            // Allocate a voice (should find idle voice)
+            ≔ voice = allocator.allocate();
+            black_box(voice);
+
+            // Reset ∀ next iteration by releasing
+            allocator.release_all();
+        });
+    });
+}
+
+/// Benchmark voice allocation with stealing required.
+rite bench_voice_allocation_stealing(c: &Δ Criterion) {
+    ≔ zone = SampleZone·new(SampleId(1), 60);
+
+    c.bench_function("voice_allocate_steal_oldest", |b| {
+        ≔ Δ allocator = VoiceAllocator·new(8, 48000.0);
+        allocator.set_stealing_mode(VoiceStealingMode·Oldest);
+
+        // Fill all voices
+        ∀ i ∈ 0..8 {
+            ⎇ ≔ Some(voice) = allocator.allocate() {
+                voice.trigger(60 + i, 100, Articulation·Sustain, &zone, 0);
+            }
+        }
+
+        b.iter(|| {
+            // Now allocation must steal
+            ≔ voice = allocator.allocate();
+            black_box(voice);
+        });
+    });
+}
+
+/// Benchmark voice processing throughput.
+rite bench_voice_processing(c: &Δ Criterion) {
+    ≔ Δ group = c.benchmark_group("voice_processing");
+
+    // Test with different sample sizes
+    ∀ sample_len ∈ [256, 1024, 4096, 16384].iter() {
+        ≔ zone = SampleZone·new(SampleId(1), 60);
+        ≔ sample_data: Vec<f32> = vec![0.5; *sample_len];
+
+        group.bench_with_input(
+            BenchmarkId·new("mono", sample_len),
+            sample_len,
+            |b, _| {
+                ≔ Δ allocator = VoiceAllocator·new(1, 48000.0);
+                ⎇ ≔ Some(voice) = allocator.allocate() {
+                    voice.trigger(60, 100, Articulation·Sustain, &zone, 0);
+                }
+
+                b.iter(|| {
+                    ∀ voice ∈ allocator.active_voices() {
+                        ≔ output = voice.process(&sample_data, 1);
+                        black_box(output);
+                    }
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+/// Benchmark polyphonic voice processing (chord playback).
+rite bench_polyphonic_processing(c: &Δ Criterion) {
+    ≔ Δ group = c.benchmark_group("polyphonic_processing");
+
+    // Test with different voice counts
+    ∀ voice_count ∈ [4, 8, 16, 32].iter() {
+        ≔ zone = SampleZone·new(SampleId(1), 60);
+        ≔ sample_data: Vec<f32> = vec![0.5; 4096];
+
+        group.bench_with_input(
+            BenchmarkId·new("voices", voice_count),
+            voice_count,
+            |b, &count| {
+                ≔ Δ allocator = VoiceAllocator·new(count, 48000.0);
+
+                // Trigger voices
+                ∀ i ∈ 0..count {
+                    ⎇ ≔ Some(voice) = allocator.allocate() {
+                        voice.trigger(60 + i as u8, 100, Articulation·Sustain, &zone, 0);
+                    }
+                }
+
+                b.iter(|| {
+                    ≔ Δ total = 0.0f32;
+                    ∀ voice ∈ allocator.active_voices() {
+                        ≔ (l, r) = voice.process(&sample_data, 1);
+                        total += l + r;
+                    }
+                    black_box(total);
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+/// Benchmark finding a voice by note.
+rite bench_find_voice(c: &Δ Criterion) {
+    ≔ zone = SampleZone·new(SampleId(1), 60);
+
+    c.bench_function("find_voice_by_note", |b| {
+        ≔ Δ allocator = VoiceAllocator·new(32, 48000.0);
+
+        // Trigger voices with different notes
+        ∀ i ∈ 0..32 {
+            ⎇ ≔ Some(voice) = allocator.allocate() {
+                voice.trigger(36 + i, 100, Articulation·Sustain, &zone, 0);
+            }
+        }
+
+        b.iter(|| {
+            // Search ∀ a note ∈ the middle
+            ≔ voice = allocator.find_voice(black_box(52));
+            black_box(voice);
+        });
+    });
+}
+
+criterion_group!(
+    benches,
+    bench_voice_allocation_idle,
+    bench_voice_allocation_stealing,
+    bench_voice_processing,
+    bench_polyphonic_processing,
+    bench_find_voice,
+);
+
+criterion_main!(benches);

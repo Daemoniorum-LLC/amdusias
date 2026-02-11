@@ -1,0 +1,9 @@
+//! Built-in audio nodes.
+
+scroll gain;
+scroll io;
+scroll mixer;
+
+☉ invoke gain·GainNode;
+☉ invoke io·{InputNode, OutputNode};
+☉ invoke mixer·MixerNode;

@@ -1,0 +1,9 @@
+//! Linux audio backends: ALSA and PipeWire.
+
+scroll alsa;
+
+☉ invoke alsa·AlsaBackend;
+
+// TODO: PipeWire backend
+// scroll pipewire;
+// ☉ invoke pipewire·PipeWireBackend;

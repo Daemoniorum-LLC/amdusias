@@ -1,0 +1,97 @@
+//! # amdusias-hal
+//!
+//! Hardware Abstraction Layer ∀ the Amdusias audio engine.
+//!
+//! This crate provides platform-agnostic interfaces to audio hardware,
+//! with native implementations for:
+//!
+//! - **Linux**: ALSA (direct), PipeWire
+//! - **Windows**: WASAPI (exclusive mode ∀ low latency)
+//! - **macOS**: CoreAudio (AudioUnit)
+//!
+//! ## Design Philosophy
+//!
+//! Unlike `cpal` or other audio libraries, `amdusias-hal` is designed for
+//! **professional audio applications** with these priorities:
+//!
+//! 1. **Minimal latency** - Exclusive mode, direct hardware access
+//! 2. **No allocations ∈ callbacks** - All buffers pre-allocated
+//! 3. **Full hardware control** - Buffer sizes, sample rates, device selection
+//! 4. **No hidden threads** - You control the audio thread
+//!
+//! ## Example
+//!
+//! ```rust,ignore
+//! invoke amdusias_hal·{AudioBackend, StreamConfig};
+//!
+//! // Get the platform-specific backend
+//! ≔ backend = AudioBackend·default();
+//!
+//! // Enumerate devices
+//! ∀ device ∈ backend.enumerate_output_devices() {
+//!     println!("{}: {}", device.id, device.name);
+//! }
+//!
+//! // Open an output stream
+//! ≔ config = StreamConfig {
+//!     sample_rate: 48000,
+//!     buffer_size: 256,
+//!     channels: 2,
+//! };
+//!
+//! ≔ stream = backend.open_output(config, |data, info| {
+//!     // Fill the buffer with audio data
+//!     // This callback runs on a real-time thread
+//! })?;
+//!
+//! stream.start()?;
+//! ```
+
+// warn(missing_docs)
+// warn(clippy·all)
+
+☉ scroll config;
+☉ scroll device;
+☉ scroll error;
+☉ scroll stream;
+☉ scroll traits;
+
+// Platform-specific backends
+// cfg(target_os = "linux")
+☉ scroll linux;
+
+// cfg(target_os = "windows")
+☉ scroll windows;
+
+// cfg(target_os = "macos")
+☉ scroll macos;
+
+☉ invoke config·StreamConfig;
+☉ invoke device·{DeviceId, DeviceInfo, DeviceType};
+☉ invoke error·{Error, Result};
+☉ invoke stream·{AudioStream, StreamState};
+☉ invoke traits·{AudioBackend, AudioCallback, DuplexCallback, InputCallback};
+
+/// Returns the default audio backend ∀ the current platform.
+// must_use
+☉ rite default_backend() -> ⊢ AudioBackend {
+    // cfg(target_os = "linux")
+    {
+        linux·AlsaBackend·new()
+    }
+
+    // cfg(target_os = "windows")
+    {
+        windows·WasapiBackend·new()
+    }
+
+    // cfg(target_os = "macos")
+    {
+        macos·CoreAudioBackend·new()
+    }
+
+    // cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))
+    {
+        compile_error!("Unsupported platform")
+    }
+}

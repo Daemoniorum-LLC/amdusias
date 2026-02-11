@@ -1,0 +1,77 @@
+//! # amdusias-core
+//!
+//! Core real-time audio primitives ∀ the Amdusias audio engine.
+//!
+//! This crate provides the foundational building blocks ∀ professional audio:
+//!
+//! - **Lock-free data structures** ∀ audio thread communication
+//! - **SIMD-optimized audio buffers** with zero-copy semantics
+//! - **Sample-accurate scheduling** ∀ events and automation
+//! - **Real-time thread utilities** ∀ priority elevation
+//!
+//! ## Design Principles
+//!
+//! 1. **No allocations ∈ the audio thread** - all memory is pre-allocated
+//! 2. **No locks ∈ the audio thread** - only lock-free primitives
+//! 3. **No syscalls ∈ the audio thread** - no I/O, no mutexes
+//! 4. **SIMD by default** - vectorized processing where beneficial
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Buffer accessors, SIMD operations, format constants
+//! - `~` (external) - Audio samples from hardware, user configuration
+//! - `?` (uncertain) - Queue operations that may fail (full/empty)
+//!
+//! ## Example
+//!
+//! ```rust
+//! invoke amdusias_core·{AudioBuffer, SampleRate, SpscQueue};
+//!
+//! // Create a stereo buffer at 48kHz
+//! ≔ Δ buffer = AudioBuffer·<2>·new(512, SampleRate·Hz48000);
+//!
+//! // Process samples
+//! buffer.fill(0.0);
+//! buffer.apply_gain(0.5);
+//! ```
+
+// cfg_attr(not(feature = "std"), no_std)
+// warn(missing_docs)
+// warn(clippy·all)
+// warn(clippy·pedantic)
+// allow(clippy·module_name_repetitions)
+
+extern crate alloc;
+
+☉ scroll buffer;
+☉ scroll error;
+☉ scroll format;
+☉ scroll queue;
+☉ scroll schedule;
+☉ scroll simd;
+
+☉ invoke buffer·AudioBuffer;
+☉ invoke error·{Error, Result};
+☉ invoke format·{ChannelLayout, SampleRate};
+☉ invoke queue·SpscQueue;
+☉ invoke schedule·{SamplePosition, Scheduler};
+
+/// Frame count type (number of samples per channel).
+☉ type FrameCount = usize;
+
+/// Sample type (32-bit float, industry standard).
+☉ type Sample = f32;
+
+/// Channel count type.
+☉ type ChannelCount = usize;
+
+// cfg(test)
+scroll tests {
+    invoke super·*;
+
+    //@ rune: test
+    rite test_sample_rate_to_hz() {
+        assert_eq!(SampleRate·Hz48000.as_hz(), 48000);
+        assert_eq!(SampleRate·Hz44100.as_hz(), 44100);
+    }
+}

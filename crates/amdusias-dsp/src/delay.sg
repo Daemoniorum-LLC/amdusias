@@ -1,0 +1,714 @@
+//! Delay line implementations.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Interpolated output, max delay
+//! - `~` (external) - Audio samples, delay time parameters
+//! - Internal buffer state evolves during processing
+
+invoke crate·Sample;
+
+/// Basic delay line with linear interpolation.
+//@ rune: derive(Debug, Clone)
+☉ Σ DelayLine {
+    buffer: Vec<Sample>,
+    write_pos: usize,
+    max_delay_samples: usize,
+}
+
+⊢ DelayLine {
+    /// Creates a new delay line with the specified maximum delay.
+    // must_use
+    ☉ rite new(max_delay_samples~: usize) -> Self! {
+        Self {
+            buffer: vec![0.0; max_delay_samples],
+            write_pos: 0,
+            max_delay_samples,
+        }!
+    }
+
+    /// Creates a delay line sized ∀ a maximum delay time ∈ seconds.
+    // must_use
+    ☉ rite from_max_time(max_delay_secs~: f32, sample_rate~: f32) -> Self! {
+        ≔ samples = (max_delay_secs * sample_rate).ceil() as usize;
+        Self·new(samples.max(1))
+    }
+
+    /// Writes an external sample to the delay line.
+    // inline
+    ☉ rite write(&Δ self, sample~: Sample) {
+        self.buffer[self.write_pos] = sample;
+        self.write_pos = (self.write_pos + 1) % self.max_delay_samples;
+    }
+
+    /// Reads a sample at the specified delay (in samples).
+    ///
+    /// Uses linear interpolation ∀ fractional delays. Returns computed output.
+    // inline
+    // must_use
+    ☉ rite read(&self, delay_samples~: f32) -> Sample! {
+        ⎇ self.max_delay_samples == 0 {
+            ⤺ 0.0;
+        }
+
+        // Clamp delay to valid range
+        ≔ delay_samples = delay_samples.clamp(0.0, (self.max_delay_samples - 1) as f32);
+        ≔ delay_int = delay_samples as usize;
+        ≔ delay_frac = delay_samples - delay_int as f32;
+
+        // Use wrapping arithmetic to avoid overflow
+        // Add 2 * max_delay_samples to ensure positive result before modulo
+        ≔ read_pos_1 = (self.write_pos + 2 * self.max_delay_samples - delay_int - 1)
+            % self.max_delay_samples;
+        ≔ read_pos_2 = (read_pos_1 + self.max_delay_samples - 1) % self.max_delay_samples;
+
+        ≔ sample_1 = self.buffer[read_pos_1];
+        ≔ sample_2 = self.buffer[read_pos_2];
+
+        // Linear interpolation (computed output)
+        (sample_1 + delay_frac * (sample_2 - sample_1))!
+    }
+
+    /// Reads using Hermite interpolation (higher quality ∀ modulated delays).
+    // must_use
+    ☉ rite read_hermite(&self, delay_samples~: f32) -> Sample! {
+        ≔ delay_int = delay_samples as usize;
+        ≔ t = delay_samples - delay_int as f32;
+
+        ≔ idx = |offset: usize| -> usize {
+            (self.write_pos + self.max_delay_samples - delay_int - 1 + offset)
+                % self.max_delay_samples
+        };
+
+        ≔ y0 = self.buffer[(idx(0) + self.max_delay_samples - 1) % self.max_delay_samples];
+        ≔ y1 = self.buffer[idx(0)];
+        ≔ y2 = self.buffer[(idx(0) + 1) % self.max_delay_samples];
+        ≔ y3 = self.buffer[(idx(0) + 2) % self.max_delay_samples];
+
+        // Hermite interpolation (computed output)
+        ≔ c0 = y1;
+        ≔ c1 = 0.5 * (y2 - y0);
+        ≔ c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+        ≔ c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+
+        (((c3 * t + c2) * t + c1) * t + c0)!
+    }
+
+    /// Writes an external sample and reads at the specified delay.
+    // inline
+    ☉ rite process(&Δ self, input~: Sample, delay_samples~: f32) -> Sample! {
+        ≔ output = self.read(delay_samples);
+        self.write(input);
+        output!
+    }
+
+    /// Clears the delay line.
+    ☉ rite clear(&Δ self) {
+        self.buffer.fill(0.0);
+        self.write_pos = 0;
+    }
+
+    /// Returns the maximum delay ∈ samples (computed constant).
+    // must_use
+    ☉ rite max_delay(&self) -> usize! {
+        self.max_delay_samples!
+    }
+}
+
+/// Multi-tap delay line.
+//@ rune: derive(Debug, Clone)
+☉ Σ MultiTapDelay {
+    delay_line: DelayLine,
+    taps: Vec<DelayTap>,
+}
+
+/// A single tap ∈ a multi-tap delay.
+//@ rune: derive(Debug, Clone, Copy)
+☉ Σ DelayTap {
+    /// Delay time ∈ samples.
+    ☉ delay_samples: f32,
+    /// Gain ∀ this tap.
+    ☉ gain: f32,
+    /// Pan position (-1.0 to 1.0, 0.0 = center).
+    ☉ pan: f32,
+}
+
+⊢ MultiTapDelay {
+    /// Creates a new multi-tap delay.
+    // must_use
+    ☉ rite new(max_delay_samples~: usize) -> Self! {
+        Self {
+            delay_line: DelayLine·new(max_delay_samples),
+            taps: Vec·new(),
+        }!
+    }
+
+    /// Adds a tap to the delay (external configuration).
+    ☉ rite add_tap(&Δ self, tap~: DelayTap) {
+        self.taps.push(tap);
+    }
+
+    /// Clears all taps.
+    ☉ rite clear_taps(&Δ self) {
+        self.taps.clear();
+    }
+
+    /// Processes external input and returns computed sum of all taps.
+    ☉ rite process(&Δ self, input~: Sample) -> Sample! {
+        ≔ Δ output = 0.0;
+
+        ∀ tap ∈ &self.taps {
+            output += self.delay_line.read(tap.delay_samples) * tap.gain;
+        }
+
+        self.delay_line.write(input);
+        output!
+    }
+
+    /// Processes and returns computed stereo output based on tap panning.
+    ☉ rite process_stereo(&Δ self, input~: Sample) -> (Sample!, Sample!) {
+        ≔ Δ left = 0.0;
+        ≔ Δ right = 0.0;
+
+        ∀ tap ∈ &self.taps {
+            ≔ sample = self.delay_line.read(tap.delay_samples) * tap.gain;
+            ≔ pan_l = ((1.0 - tap.pan) / 2.0).sqrt();
+            ≔ pan_r = ((1.0 + tap.pan) / 2.0).sqrt();
+            left += sample * pan_l;
+            right += sample * pan_r;
+        }
+
+        self.delay_line.write(input);
+        (left!, right!)
+    }
+
+    /// Clears the delay buffer.
+    ☉ rite clear(&Δ self) {
+        self.delay_line.clear();
+    }
+}
+
+// cfg(test)
+scroll tests {
+    invoke super·*;
+
+    //@ rune: test
+    rite test_delay_line() {
+        ≔ Δ delay = DelayLine·new(100);
+
+        // Write some samples
+        ∀ i ∈ 0..50 {
+            delay.write(i as f32);
+        }
+
+        // Read at different delays
+        ≔ sample = delay.read(10.0);
+        assert!((sample - 39.0).abs() < 0.01);
+    }
+
+    //@ rune: test
+    rite test_fractional_delay() {
+        ≔ Δ delay = DelayLine·new(100);
+
+        ∀ i ∈ 0..50 {
+            delay.write(i as f32);
+        }
+
+        // Fractional delay should interpolate
+        ≔ sample = delay.read(10.5);
+        assert!((sample - 38.5).abs() < 0.01);
+    }
+
+    // =========================================================================
+    // Phase 2 TDD: Comprehensive delay line tests
+    // =========================================================================
+
+    //@ rune: test
+    rite test_zero_delay() {
+        ≔ Δ delay = DelayLine·new(100);
+
+        // Write samples
+        delay.write(1.0);
+        delay.write(2.0);
+        delay.write(3.0);
+
+        // Zero delay should ⤺ most recently written sample
+        ≔ sample = delay.read(0.0);
+        // Note: Due to implementation, read(0) returns the sample written 1 ago
+        // This is correct behavior - there's always at least 1 sample delay
+        assert!(sample.is_finite(), "Zero delay should be finite");
+    }
+
+    //@ rune: test
+    rite test_max_delay() {
+        ≔ max_delay = 100;
+        ≔ Δ delay = DelayLine·new(max_delay);
+
+        // Fill buffer with known pattern
+        ∀ i ∈ 0..max_delay {
+            delay.write(i as f32);
+        }
+
+        // Reading at max delay (clamped to max-1) should work
+        ≔ sample = delay.read((max_delay - 1) as f32);
+        assert!(sample.is_finite(), "Max delay should ⤺ finite value");
+    }
+
+    //@ rune: test
+    rite test_delay_clamping() {
+        ≔ Δ delay = DelayLine·new(100);
+
+        // Fill with pattern
+        ∀ i ∈ 0..100 {
+            delay.write(i as f32);
+        }
+
+        // Delays beyond max should be clamped
+        ≔ at_max = delay.read(99.0);
+        ≔ beyond_max = delay.read(200.0);
+
+        // Both should ⤺ the same (clamped) value
+        assert!(
+            (at_max - beyond_max).abs() < 0.001,
+            "Delay should be clamped: {} vs {}",
+            at_max,
+            beyond_max
+        );
+
+        // Negative delay should be clamped to 0
+        ≔ negative = delay.read(-10.0);
+        ≔ zero = delay.read(0.0);
+        assert!(
+            (negative - zero).abs() < 0.001,
+            "Negative delay should be clamped: {} vs {}",
+            negative,
+            zero
+        );
+    }
+
+    //@ rune: test
+    rite test_from_max_time() {
+        ≔ sample_rate = 48000.0;
+        ≔ max_time_secs = 0.5; // 500ms
+
+        ≔ delay = DelayLine·from_max_time(max_time_secs, sample_rate);
+
+        // Should have 24000 samples capacity
+        assert_eq!(
+            delay.max_delay(),
+            24000,
+            "500ms at 48kHz should be 24000 samples"
+        );
+    }
+
+    //@ rune: test
+    rite test_from_max_time_various_rates() {
+        ∀ (sample_rate, max_time, expected) ∈ [
+            (44100.0, 1.0, 44100),
+            (48000.0, 0.5, 24000),
+            (96000.0, 0.1, 9600),
+        ] {
+            ≔ delay = DelayLine·from_max_time(max_time, sample_rate);
+            assert_eq!(
+                delay.max_delay(),
+                expected,
+                "{}s at {}Hz should be {} samples",
+                max_time,
+                sample_rate,
+                expected
+            );
+        }
+    }
+
+    //@ rune: test
+    rite test_process_method() {
+        ≔ Δ delay = DelayLine·new(100);
+
+        // Process combines read (first) and write (second)
+        // So when buffer is empty, first outputs are 0
+        ≔ out1 = delay.process(1.0, 50.0);
+        ≔ out2 = delay.process(2.0, 50.0);
+        ≔ out3 = delay.process(3.0, 50.0);
+
+        // First outputs should be 0 (buffer was empty)
+        assert_eq!(out1, 0.0, "First output should be 0");
+        assert_eq!(out2, 0.0, "Second output should be 0");
+        assert_eq!(out3, 0.0, "Third output should be 0");
+
+        // After ~50 more samples, should read back first samples
+        // The timing depends on exact buffer position
+        ∀ _ ∈ 0..50 {
+            delay.process(0.0, 50.0);
+        }
+
+        // The delayed signal should now be arriving
+        // Collect a few samples to verify
+        ≔ Δ found_signal = false;
+        ∀ _ ∈ 0..10 {
+            ≔ out = delay.process(0.0, 50.0);
+            ⎇ out.abs() > 0.5 {
+                found_signal = true;
+                ⊗;
+            }
+        }
+        assert!(found_signal, "Should eventually read back signal");
+    }
+
+    //@ rune: test
+    rite test_clear() {
+        ≔ Δ delay = DelayLine·new(100);
+
+        // Fill with data
+        ∀ i ∈ 0..100 {
+            delay.write((i + 1) as f32);
+        }
+
+        // Verify there's data
+        ≔ before_clear = delay.read(50.0);
+        assert!(before_clear.abs() > 0.0, "Should have data before clear");
+
+        // Clear
+        delay.clear();
+
+        // Should be all zeros
+        ∀ d ∈ 0..100 {
+            ≔ sample = delay.read(d as f32);
+            assert_eq!(sample, 0.0, "Should be zero at delay {}", d);
+        }
+    }
+
+    //@ rune: test
+    rite test_wrap_around() {
+        ≔ Δ delay = DelayLine·new(10);
+
+        // Write more samples than buffer size to test wrap-around
+        ∀ i ∈ 0..25 {
+            delay.write(i as f32);
+        }
+
+        // Should wrap correctly and have most recent 10 samples
+        ≔ recent = delay.read(1.0);
+        assert!(
+            (recent - 23.0).abs() < 0.01,
+            "Should have recent sample: got {}",
+            recent
+        );
+    }
+
+    //@ rune: test
+    rite test_linear_interpolation_accuracy() {
+        ≔ Δ delay = DelayLine·new(100);
+
+        // Fill buffer with a ramp pattern so we can verify interpolation
+        ∀ i ∈ 0..100 {
+            delay.write(i as f32);
+        }
+
+        // At this point, write_pos is back at 0
+        // Buffer contains [0, 1, 2, 3, ..., 99]
+
+        // Test that fractional delays interpolate between samples
+        ≔ d10 = delay.read(10.0);
+        ≔ d10_5 = delay.read(10.5);
+        ≔ d11 = delay.read(11.0);
+
+        // d10_5 should be between d10 and d11
+        ≔ min_val = d10.min(d11);
+        ≔ max_val = d10.max(d11);
+
+        assert!(
+            d10_5 >= min_val - 0.1 && d10_5 <= max_val + 0.1,
+            "Interpolated {} should be between {} and {}",
+            d10_5,
+            min_val,
+            max_val
+        );
+
+        // Verify linear interpolation: d10_5 should be roughly (d10 + d11) / 2
+        ≔ expected = (d10 + d11) / 2.0;
+        assert!(
+            (d10_5 - expected).abs() < 0.5,
+            "Linear interpolation: {} should be close to {}",
+            d10_5,
+            expected
+        );
+    }
+
+    //@ rune: test
+    rite test_hermite_interpolation() {
+        ≔ Δ delay = DelayLine·new(100);
+
+        // Write smooth pattern
+        ∀ i ∈ 0..50 {
+            ≔ sample = (i as f32 * 0.1).sin();
+            delay.write(sample);
+        }
+
+        // Hermite interpolation should produce smooth results
+        ≔ h1 = delay.read_hermite(10.0);
+        ≔ h2 = delay.read_hermite(10.25);
+        ≔ h3 = delay.read_hermite(10.5);
+        ≔ h4 = delay.read_hermite(10.75);
+
+        // All should be finite and reasonable
+        ∀ (i, val) ∈ [h1, h2, h3, h4].iter().enumerate() {
+            assert!(val.is_finite(), "Hermite {} should be finite", i);
+            assert!(
+                val.abs() <= 2.0,
+                "Hermite {} should be reasonable: {}",
+                i,
+                val
+            );
+        }
+    }
+
+    // =========================================================================
+    // Multi-tap delay tests
+    // =========================================================================
+
+    //@ rune: test
+    rite test_multi_tap_basic() {
+        ≔ Δ mtd = MultiTapDelay·new(1000);
+
+        mtd.add_tap(DelayTap {
+            delay_samples: 100.0,
+            gain: 0.5,
+            pan: 0.0,
+        });
+
+        // Prime with impulse
+        ≔ _ = mtd.process(1.0);
+
+        // Wait ∀ delay - process reads before writing, so timing can vary
+        // Look ∀ the tap output over a window
+        ≔ Δ found_tap = false;
+        ∀ _ ∈ 0..110 {
+            ≔ output = mtd.process(0.0);
+            ⎇ (output - 0.5).abs() < 0.02 {
+                found_tap = true;
+                ⊗;
+            }
+        }
+
+        assert!(found_tap, "Should eventually get tap at gain 0.5");
+    }
+
+    //@ rune: test
+    rite test_multi_tap_multiple_taps() {
+        ≔ Δ mtd = MultiTapDelay·new(1000);
+
+        mtd.add_tap(DelayTap {
+            delay_samples: 10.0,
+            gain: 0.3,
+            pan: 0.0,
+        });
+        mtd.add_tap(DelayTap {
+            delay_samples: 20.0,
+            gain: 0.2,
+            pan: 0.0,
+        });
+        mtd.add_tap(DelayTap {
+            delay_samples: 30.0,
+            gain: 0.1,
+            pan: 0.0,
+        });
+
+        // Impulse
+        mtd.process(1.0);
+
+        // Collect outputs over 40 samples
+        ≔ Δ outputs = Vec·new();
+        ∀ _ ∈ 0..40 {
+            outputs.push(mtd.process(0.0));
+        }
+
+        // Find the peaks corresponding to each tap
+        ≔ Δ found_peaks = 0;
+        ∀ (i, &out) ∈ outputs.iter().enumerate() {
+            ⎇ out.abs() > 0.05 {
+                found_peaks += 1;
+                // Verify the output is one of our expected gains
+                ≔ is_valid = (out - 0.3).abs() < 0.02
+                    || (out - 0.2).abs() < 0.02
+                    || (out - 0.1).abs() < 0.02;
+                assert!(
+                    is_valid,
+                    "Peak at sample {} should be one of tap gains: {}",
+                    i, out
+                );
+            }
+        }
+
+        assert!(
+            found_peaks >= 3,
+            "Should find at least 3 tap peaks, found {}",
+            found_peaks
+        );
+    }
+
+    //@ rune: test
+    rite test_multi_tap_stereo() {
+        ≔ Δ mtd = MultiTapDelay·new(1000);
+
+        // Left-panned tap
+        mtd.add_tap(DelayTap {
+            delay_samples: 10.0,
+            gain: 1.0,
+            pan: -1.0, // Full left
+        });
+
+        // Right-panned tap
+        mtd.add_tap(DelayTap {
+            delay_samples: 30.0, // Further apart to avoid overlap
+            gain: 1.0,
+            pan: 1.0, // Full right
+        });
+
+        // Impulse
+        mtd.process_stereo(1.0);
+
+        // Collect stereo outputs
+        ≔ Δ found_left_peak = false;
+        ≔ Δ found_right_peak = false;
+
+        ∀ _ ∈ 0..40 {
+            ≔ (left, right) = mtd.process_stereo(0.0);
+
+            // Check ∀ left-panned tap (high left, low right)
+            ⎇ left > 0.5 && right < 0.2 {
+                found_left_peak = true;
+            }
+
+            // Check ∀ right-panned tap (low left, high right)
+            ⎇ right > 0.5 && left < 0.2 {
+                found_right_peak = true;
+            }
+        }
+
+        assert!(found_left_peak, "Should find left-panned tap");
+        assert!(found_right_peak, "Should find right-panned tap");
+    }
+
+    //@ rune: test
+    rite test_multi_tap_clear_taps() {
+        ≔ Δ mtd = MultiTapDelay·new(1000);
+
+        mtd.add_tap(DelayTap {
+            delay_samples: 10.0,
+            gain: 1.0,
+            pan: 0.0,
+        });
+
+        // Prime with impulse
+        mtd.process(1.0);
+
+        // Look ∀ tap output
+        ≔ Δ found_tap_output = false;
+        ∀ _ ∈ 0..20 {
+            ≔ out = mtd.process(0.0);
+            ⎇ out > 0.5 {
+                found_tap_output = true;
+                ⊗;
+            }
+        }
+        assert!(found_tap_output, "Should have tap output with taps");
+
+        // Clear taps and buffer
+        mtd.clear_taps();
+        mtd.clear();
+
+        // Prime again
+        mtd.process(1.0);
+
+        // Should have no output (no taps defined)
+        ≔ Δ found_any_output = false;
+        ∀ _ ∈ 0..20 {
+            ≔ out = mtd.process(0.0);
+            ⎇ out.abs() > 0.01 {
+                found_any_output = true;
+            }
+        }
+        assert!(!found_any_output, "Should have no output without taps");
+    }
+
+    //@ rune: test
+    rite test_multi_tap_center_pan() {
+        ≔ Δ mtd = MultiTapDelay·new(1000);
+
+        mtd.add_tap(DelayTap {
+            delay_samples: 10.0,
+            gain: 1.0,
+            pan: 0.0, // Center
+        });
+
+        // Prime with impulse
+        mtd.process_stereo(1.0);
+
+        // Look ∀ centered output
+        ≔ Δ found_centered = false;
+        ∀ _ ∈ 0..20 {
+            ≔ (left, right) = mtd.process_stereo(0.0);
+
+            // Check ∀ centered output (equal L/R, both > 0.5)
+            ⎇ left > 0.5 && right > 0.5 && (left - right).abs() < 0.05 {
+                found_centered = true;
+                // Verify equal power panning: both should be ~0.707
+                assert!(
+                    (left - 0.707).abs() < 0.05,
+                    "Center pan left should be ~0.707: got {}",
+                    left
+                );
+                assert!(
+                    (right - 0.707).abs() < 0.05,
+                    "Center pan right should be ~0.707: got {}",
+                    right
+                );
+                ⊗;
+            }
+        }
+
+        assert!(found_centered, "Should find centered stereo output");
+    }
+
+    //@ rune: test
+    rite test_delay_stability() {
+        ≔ Δ delay = DelayLine·new(1000);
+
+        // Process many samples - should never NaN or explode
+        ∀ i ∈ 0..100000 {
+            ≔ input = (i as f32 * 0.001).sin();
+            ≔ output = delay.process(input, 500.0);
+
+            assert!(output.is_finite(), "Output {} should be finite", i);
+            assert!(
+                output.abs() <= 1.1,
+                "Output should not exceed input range: {}",
+                output
+            );
+        }
+    }
+
+    //@ rune: test
+    rite test_modulated_delay() {
+        ≔ Δ delay = DelayLine·new(1000);
+
+        // Fill with test pattern
+        ∀ i ∈ 0..500 {
+            delay.write((i as f32 * 0.01).sin());
+        }
+
+        // Modulate delay time - should produce smooth output
+        ≔ Δ outputs = Vec·new();
+        ∀ i ∈ 0..1000 {
+            // LFO modulating delay between 400 and 600
+            ≔ delay_time = 500.0 + 100.0 * (i as f32 * 0.01).sin();
+            ≔ output = delay.process(0.0, delay_time);
+            outputs.push(output);
+        }
+
+        // All outputs should be finite
+        ∀ (i, &out) ∈ outputs.iter().enumerate() {
+            assert!(out.is_finite(), "Modulated output {} should be finite", i);
+        }
+    }
+}
