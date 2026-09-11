@@ -41,8 +41,6 @@
 // warn(clippy·pedantic)
 // allow(clippy·module_name_repetitions)
 
-extern crate alloc;
-
 ☉ scroll buffer;
 ☉ scroll error;
 ☉ scroll format;
