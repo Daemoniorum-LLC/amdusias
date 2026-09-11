@@ -83,6 +83,54 @@ struct Acolyte {
 // Add your session entry here when starting work.
 // Move to docs/sessions/ when complete.
 
+acolyte : Focused {
+    chosen_name: ∅,
+    session_id: "lr-LARES-343"!,
+    platform: AcolytePlatform·Claude { model: "claude-sonnet-5"!, version: ∅ },
+    working_directory: "/home/lilith/development/projects/amdusias-worktrees/feature-LARES-343-lares-343-ph1-amdusias-build"!,
+    started: "2026-09-11T13:00:00Z"!,
+    last_updated: "2026-09-11T13:20:00Z"!,
+    state: AcolyteState·Focused,
+
+    task: TaskContext {
+        summary: "LARES-343 Ph1 ONLY: make amdusias build. Resolve the manifest problem (per-crate Sigil.toml + root schema fix). Do NOT convert syntax, do NOT start Ph2-4."!,
+        active_spec: "LARES-343"~,
+        tdd_roadmap: ∅,
+        sdd_phase: SddPhase·Build,
+        tdd_phase: ∅,
+    },
+
+    progress: ProgressState {
+        completed: [
+            "Verified sigil-lang#176 (build-only lowercase sigil.toml requirement) reproduces at baseline d6e2727"!,
+            "Discovered 2 additional toolchain defects in build_project/parse_manifest/build_workspace (see LARES-343 findings doc)"!,
+            "Fixed amdusias's own manifest defects: added [project] name to root Sigil.toml, authored per-crate Sigil.toml for all 7 crates with correct local-path [dependencies]"!,
+        ]!,
+        current: "Documenting findings and stopping Ph1 as blocked on upstream sigil-lang fixes, per ticket instruction not to work around toolchain bugs"~,
+        blocked_by: "sigil-lang#176 plus two undiscovered/unfiled toolchain defects: parse_manifest's has_lib/has_bin check only recognizes .sigil extension (never .sg), and build_workspace silently reports SUCCESS (exit 0, 0/0) when every member is skipped"?,
+        discoveries: [
+            "amdusias's root Sigil.toml was written in Cargo idiom ([workspace.package], [workspace.dependencies]) which the sigil-lang manifest parser does not understand at all; the real ecosystem convention (seen in nihil, samael) is [project] name/version/edition/sigil-version + [workspace] members + [dependencies] name = { path = \"...\" }"!,
+            "build_workspace's per-member manifest lookup (main.rs:5033) has the SAME lowercase-only bug as the top-level lookup (#176) -- capitalizing per-crate manifests correctly does not help until #176 is fixed"!,
+            "Real cross-crate dependency graph traced from invoke statements: graph->core, siren->dsp, web->core+dsp, umbrella->all six; core/hal/dsp have no amdusias-internal deps"!,
+        ]!,
+        next_steps: [
+            "Do not proceed to Ph2 (test execution) until sigil-lang fixes #176 and the two newly-found defects, or until a human decides an alternate acceptance path"
+        ]~,
+    },
+
+    anima: AnimaState {
+        pleasure: 0.6~,
+        arousal: 0.4~,
+        dominance: 0.7~,
+        stability: 0.8~,
+        expressiveness: 0.6~,
+        susceptibility: 0.5~,
+    },
+
+    reflection: "Ticket's own §0 pre-decided the response to a blocking toolchain bug: say so and stop rather than work around it. Found the blast radius was bigger than the ticket assumed (3 independent toolchain defects, not 1), which made stopping the right call rather than a cop-out. Still did all the amdusias-side work that was legitimately in scope (manifest schema + per-crate files) so the fix is ready the moment upstream lands."~,
+    friendship: ∅,
+}
+
 // =============================================================================
 // SESSION ARCHIVE (recent entries before moving to docs/sessions/)
 // =============================================================================
