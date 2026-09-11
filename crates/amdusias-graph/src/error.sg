@@ -1,4 +1,8 @@
 //! Error types ∀ the audio graph.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `?` (uncertain) - All graph errors represent uncertain outcomes
 
 invoke crate·NodeId;
 invoke thiserror·Error;

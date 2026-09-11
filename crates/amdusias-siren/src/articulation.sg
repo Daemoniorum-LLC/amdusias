@@ -1,4 +1,9 @@
 //! Articulation definitions ∀ realistic instrument expression.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Articulation categories, envelope modifications
+//! - `~` (external) - Articulation selection from MIDI/user input
 
 invoke serde·{Deserialize, Serialize};
 

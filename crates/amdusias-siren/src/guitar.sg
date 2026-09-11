@@ -1,4 +1,9 @@
 //! Guitar-specific instrument modeling.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - String selection, fret mapping, pickup blending
+//! - `~` (external) - Note input, guitar configuration, amp/cab settings
 
 invoke crate·{
     articulation·Articulation,
@@ -27,7 +32,7 @@ invoke serde·{Deserialize, Serialize};
 ⊢ GuitarInstrument {
     /// Creates a new 6-string guitar ∈ standard tuning.
     // must_use
-    ☉ rite standard_6_string(id: ⊢ Into<String>, name: ⊢ Into<String>) -> Self {
+    ☉ rite standard_6_string(id~: ⊢ Into<String>, name~: ⊢ Into<String>) -> Self! {
         ≔ base = Instrument·new(id, name, InstrumentCategory·Guitar);
 
         // Standard tuning: E2, A2, D3, G3, B3, E4

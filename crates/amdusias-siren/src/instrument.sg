@@ -1,4 +1,9 @@
 //! Instrument definitions.
+//!
+//! ## Evidentiality Conventions
+//!
+//! - `!` (computed) - Zone matching, voice allocation
+//! - `~` (external) - MIDI input, instrument configuration
 
 invoke crate·{articulation·Articulation, sample·SampleZone};
 invoke serde·{Deserialize, Serialize};
@@ -56,8 +61,8 @@ invoke serde·{Deserialize, Serialize};
 ⊢ Instrument {
     /// Creates a new instrument.
     // must_use
-    ☉ rite new(id: ⊢ Into<String>, name: ⊢ Into<String>, category: InstrumentCategory) -> Self {
-        Self {
+    ☉ rite new(id~: ⊢ Into<String>, name~: ⊢ Into<String>, category~: InstrumentCategory) -> Self! {
+        (Self {
             id: id.into(),
             name: name.into(),
             category,
@@ -66,21 +71,21 @@ invoke serde·{Deserialize, Serialize};
             envelope: EnvelopeSettings·default(),
             max_voices: 32,
             round_robin_groups: 1,
-        }
+        })!
     }
 
     /// Adds a sample zone.
-    ☉ rite add_zone(&Δ self, zone: SampleZone) {
+    ☉ rite add_zone(&Δ self, zone~: SampleZone) {
         self.zones.push(zone);
     }
 
     /// Finds zones matching the given note, velocity, and articulation.
     ☉ rite find_zones(
         &self,
-        note: u8,
-        velocity: u8,
-        articulation: Articulation,
-    ) -> ⊢ Iterator<Item = &SampleZone> {
+        note~: u8,
+        velocity~: u8,
+        articulation~: Articulation,
+    ) -> ⊢ Iterator<Item = &SampleZone>! {
         // First check ⎇ there's an articulation-specific zone
         ≔ art_zones: Vec<_> = self
             .articulations

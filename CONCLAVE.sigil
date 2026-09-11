@@ -83,6 +83,59 @@ struct Acolyte {
 // Add your session entry here when starting work.
 // Move to docs/sessions/ when complete.
 
+acolyte : Focused {
+    chosen_name: ∅,
+    session_id: "lr-LARES-343"!,
+    platform: AcolytePlatform·Claude { model: "claude-sonnet-5"!, version: ∅ },
+    working_directory: "/home/lilith/development/projects/amdusias-worktrees/feature-LARES-343-lares-343-amdusias-manifest-shape"!,
+    started: "2026-09-11T13:00:00Z"!,
+    last_updated: "2026-09-11T20:35:00Z"!,
+    state: AcolyteState·Focused,
+
+    task: TaskContext {
+        summary: "LARES-343 Ph1 ONLY: make amdusias build. Resolve the manifest problem (per-crate Sigil.toml + root schema fix). Do NOT convert syntax, do NOT start Ph2-4."!,
+        active_spec: "LARES-343"~,
+        tdd_roadmap: ∅,
+        sdd_phase: SddPhase·Build,
+        tdd_phase: ∅,
+    },
+
+    progress: ProgressState {
+        completed: [
+            "Verified sigil-lang#176 (build-only lowercase sigil.toml requirement) reproduces at baseline d6e2727"!,
+            "Discovered 2 additional toolchain defects in build_project/parse_manifest/build_workspace (see LARES-343 findings doc)"!,
+            "Fixed amdusias's own manifest defects: added [project] name to root Sigil.toml, authored per-crate Sigil.toml for all 7 crates with correct local-path [dependencies]"!,
+            "sigil-lang#176/#177/#178/#179 merged upstream (PR #180 to develop, 2026-09-11); built sigil-parser fresh at origin/develop (b45984b) in an isolated worktree since the installed ~/.local/bin/sigil predates the fix"!,
+            "Cherry-picked the per-crate manifest commit (b4947d8) from feature/LARES-343-lares-343-ph1-amdusias-build onto this branch"!,
+            "Re-ran `sigil build .` with the fixed toolchain: manifest-shape blocker is RESOLVED -- 6 of 7 workspace members now build (amdusias, amdusias-hal, amdusias-dsp, amdusias-graph, amdusias-siren, amdusias-web all report ok)"!,
+        ]!,
+        current: "Daemon approved removing the extern-crate leftover as completing the migration, not converting syntax. Deleted crates/amdusias-core/src/lib.sg:44. Rebuilt clean: sigil build . exits 0, 7/7 tomes, and verified all 7 crates/*/target/*.a are real ar archives with real ELF .o members (not just trusting exit code, per bug #3 in findings). Ph1 acceptance MET."~,
+        blocked_by: ∅,
+        discoveries: [
+            "amdusias's root Sigil.toml was written in Cargo idiom ([workspace.package], [workspace.dependencies]) which the sigil-lang manifest parser does not understand at all; the real ecosystem convention (seen in nihil, samael) is [project] name/version/edition/sigil-version + [workspace] members + [dependencies] name = { path = \"...\" }"!,
+            "build_workspace's per-member manifest lookup (main.rs:5033) has the SAME lowercase-only bug as the top-level lookup (#176) -- capitalizing per-crate manifests correctly does not help until #176 is fixed"!,
+            "Real cross-crate dependency graph traced from invoke statements: graph->core, siren->dsp, web->core+dsp, umbrella->all six; core/hal/dsp have no amdusias-internal deps"!,
+            "ci.yml's `cargo install sigil-parser` is still unpinned (LARES-346, separately investigated and left docs-only) -- it resolves crates.io v0.3.0, three weeks older than amdusias and pre-dating all 4 fixes, so a CI run right now would NOT reflect today's local result"!,
+        ]!,
+        next_steps: [
+            "Rebase onto current develop before opening the PR, re-run sigil build AFTER the rebase (not before), per ground rules",
+            "Open feature -> PR -> develop; do not push to CI expecting a trustworthy result until LARES-346 lands a pin (ci.yml's cargo install sigil-parser is still unpinned, resolves crates.io v0.3.0, 3 weeks stale)"
+        ]~,
+    },
+
+    anima: AnimaState {
+        pleasure: 0.8~,
+        arousal: 0.5~,
+        dominance: 0.8~,
+        stability: 0.9~,
+        expressiveness: 0.6~,
+        susceptibility: 0.5~,
+    },
+
+    reflection: "The manifest-shape fix itself was validated the moment the upstream toolchain bugs landed -- 6/7 crates built clean off the exact same per-crate Sigil.toml files a prior session authored blind, with zero corrections needed. The one remaining stop (a leftover extern-crate line) was a genuine scope judgment call, not a technical blocker, and asking rather than guessing was the right instinct: Daemon's answer reframed a one-line fix into real evidence (this crate has never actually been built, ever, by anyone) that's worth more than the line change itself. Checking the artefact rather than trusting 7/7-exit-0 was worth the extra two minutes -- it's exactly the failure mode this ticket's own findings doc had already warned about."~,
+    friendship: ∅,
+}
+
 // =============================================================================
 // SESSION ARCHIVE (recent entries before moving to docs/sessions/)
 // =============================================================================

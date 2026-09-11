@@ -1,0 +1,6 @@
+[project]
+name = "amdusias-hal"
+version = "0.1.0"
+edition = "2025"
+sigil-version = "0.4.0"
+description = "Hardware abstraction layer (WASAPI/CoreAudio/ALSA/PipeWire) for Amdusias"
