@@ -1,0 +1,14 @@
+[project]
+name = "amdusias"
+version = "0.1.0"
+edition = "2025"
+sigil-version = "0.4.0"
+description = "Unified re-export crate for the Amdusias audio engine"
+
+[dependencies]
+amdusias-core = { path = "../amdusias-core" }
+amdusias-dsp = { path = "../amdusias-dsp" }
+amdusias-graph = { path = "../amdusias-graph" }
+amdusias-hal = { path = "../amdusias-hal" }
+amdusias-siren = { path = "../amdusias-siren" }
+amdusias-web = { path = "../amdusias-web" }

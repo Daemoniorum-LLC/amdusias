@@ -1,0 +1,10 @@
+[project]
+name = "amdusias-web"
+version = "0.1.0"
+edition = "2025"
+sigil-version = "0.4.0"
+description = "WASM + AudioWorklet bindings for Amdusias"
+
+[dependencies]
+amdusias-core = { path = "../amdusias-core" }
+amdusias-dsp = { path = "../amdusias-dsp" }
