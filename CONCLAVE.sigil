@@ -86,3 +86,52 @@ struct Acolyte {
 // =============================================================================
 // SESSION ARCHIVE (recent entries before moving to docs/sessions/)
 // =============================================================================
+
+acolyte : Complete {
+    chosen_name: ∅,
+    session_id: "LARES-346-pin-sigil-parser-in-ci-2026-09-11"!,
+    platform: AcolytePlatform·Claude { model: "claude-sonnet-5"!, version: ∅ },
+    working_directory: "/home/lilith/development/projects/amdusias-worktrees/feature-LARES-346-lares-346-pin-sigil-parser-in-ci"!,
+    started: "2026-09-11T15:15:00Z"!,
+    last_updated: "2026-09-11T15:23:00Z"!,
+    state: AcolyteState·Reflecting,
+
+    task: TaskContext {
+        summary: "Pin sigil-parser in ci.yml so a CI red is attributable to code, not toolchain skew (LARES-346)"!,
+        active_spec: "186e45bb-29dc-4d23-bff4-8314b45478f3",
+        tdd_roadmap: ∅,
+        sdd_phase: SddPhase·Learn,
+        tdd_phase: ∅,
+    },
+
+    progress: ProgressState {
+        completed: [
+            "Read parser/src/main.rs at v0.3.0, v0.4.0-rc.4 (newest active published), and origin/develop@d6e2727 (newest unreleased)",
+            "Confirmed crates.io published-version list and yanked status",
+            "Confirmed `sigil check` has never accepted a directory argument, at any of those three points",
+            "Filed sigil-lang#178 upstream for the gap",
+            "Wrote findings to ~/development/resources/tickets/LARES-346/findings.md and imported as a ticket-doc",
+            "Cross-posted the finding as a Lares doc against LARES-343"
+        ]!,
+        current: "Done — stopped per ticket's own instruction, no ci.yml change made"~,
+        blocked_by: "No published or unreleased sigil-parser version supports `sigil check <directory>`; ci.yml's `sigil check .` cannot pass under any pin until sigil-lang#178 is fixed upstream",
+        discoveries: [
+            "sigil check has no is_dir() branch anywhere in its history — lint/build/build_workspace/test all walk directories, check never has",
+            "v0.3.0 is a pre-Sigil.toml naming era (Grimoire.toml, tome_forge/conjure/summon thematic commands), corroborating the ticket's own report",
+            "The v0.4.0-rc.4 git tag's own Cargo.toml reads 0.4.0-rc.3 — a minor release/tag mismatch, noted but not chased"
+        ]!,
+        next_steps: []~,
+    },
+
+    anima: AnimaState {
+        pleasure: 0.7~,
+        arousal: 0.3~,
+        dominance: 0.8~,
+        stability: 0.9~,
+        expressiveness: 0.6~,
+        susceptibility: 0.4~,
+    },
+
+    reflection: "The ticket anticipated this exact outcome and named it in advance ('IF NO PUBLISHED VERSION DOES ALL THREE, SAY SO AND STOP'), which made this a clean, low-ambiguity investigation rather than an open-ended one. Reading the CLI's own source at three refs spanning the full published+unreleased range was more conclusive than trying to reproduce the CI run, and cheaper.",
+    friendship: ∅,
+}
